@@ -4,7 +4,7 @@ const router = express.Router();
 const { protect, authorize } = require("../middleware/auth");
 const User = require("../models/User");
 const Attendance = require("../models/Attendance");
-
+const { getEmployeeRoute } = require("../controllers/adminRouteController");
 // All routes are protected and admin-only
 router.use(protect);
 router.use(authorize("ADMIN"));
@@ -82,7 +82,12 @@ router.get("/checked-in-employees", async (req, res) => {
     });
   }
 });
-
+router.get(
+  "/employee/:employeeId/route",
+  protect,
+  authorize("ADMIN"),
+  getEmployeeRoute,
+);
 // GET /api/admin/employees
 router.get("/employees", async (req, res) => {
   try {
@@ -152,7 +157,7 @@ router.get("/not-checked-in-employees", async (req, res) => {
     const today = new Date().toISOString().split("T")[0];
 
     const allEmployees = await User.find({ role: "EMPLOYEE" }).select(
-      "-password"
+      "-password",
     );
 
     // ✅ FIX: Use employeeId
@@ -161,7 +166,7 @@ router.get("/not-checked-in-employees", async (req, res) => {
     }).distinct("employeeId");
 
     const notCheckedIn = allEmployees.filter(
-      (emp) => !checkedInIds.some((id) => id.toString() === emp._id.toString())
+      (emp) => !checkedInIds.some((id) => id.toString() === emp._id.toString()),
     );
 
     console.log(`✅ Found ${notCheckedIn.length} not checked-in employees`);
@@ -244,15 +249,15 @@ router.get("/dashboard-stats", async (req, res) => {
     const todayAttendances = await Attendance.find({ date: today });
 
     const checkedInCount = todayAttendances.filter(
-      (att) => att.status === "CHECKED_IN"
+      (att) => att.status === "CHECKED_IN",
     ).length;
 
     const reachedCount = todayAttendances.filter(
-      (att) => att.status === "REACHED_OFFICE"
+      (att) => att.status === "REACHED_OFFICE",
     ).length;
 
     const checkedOutCount = todayAttendances.filter(
-      (att) => att.status === "CHECKED_OUT"
+      (att) => att.status === "CHECKED_OUT",
     ).length;
 
     const notCheckedInCount = totalEmployees - todayAttendances.length;

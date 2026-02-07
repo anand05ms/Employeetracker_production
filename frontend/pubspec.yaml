@@ -9,12 +9,19 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  flutter_background_service: ^5.0.5
+  flutter_background_service_android: ^6.2.2
+  flutter_local_notifications: ^17.2.2
 
   # Map & Location
-  flutter_map: ^6.2.0
+  flutter_map: ^7.0.2
   latlong2: ^0.9.0
   geolocator: ^10.1.0
   geocoding: ^2.1.1
+  http: ^1.2.0
+  dio: ^5.4.0
   connectivity_plus: ^5.0.2
   shared_preferences: ^2.2.2
   flutter_secure_storage: ^9.0.0 # Secure token storage
@@ -22,7 +29,6 @@ dependencies:
   google_maps_flutter: ^2.5.0
   # Real-time & Network
   socket_io_client: ^2.0.3
-  http: ^1.1.0
 
   # State Management
   provider: ^6.1.1

@@ -511,10 +511,8 @@
 //     });
 //   }
 // };
-
 const Location = require("../models/Location");
 const Attendance = require("../models/Attendance");
-const User = require("../models/User");
 
 /* ================== HELPERS ================== */
 
@@ -531,31 +529,24 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-const calculateETA = (distanceMeters) => {
-  const speedKmh = 40;
-  return Math.round((distanceMeters / 1000 / speedKmh) * 60);
-};
-
 /* ================== CHECK IN ================== */
 
 exports.checkIn = async (req, res) => {
   try {
-    const { latitude, longitude, address, accuracy } = req.body;
+    const { latitude, longitude, address } = req.body;
 
-    if (!latitude || !longitude) {
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
       return res.status(400).json({
         success: false,
-        message: "Latitude and longitude required",
+        message: "Latitude and longitude are required",
       });
     }
 
     const employeeId = req.user.id;
     const today = new Date().toISOString().split("T")[0];
 
-    // 🔥 FIND TODAY ATTENDANCE (ANY STATUS)
     let attendance = await Attendance.findOne({ employeeId, date: today });
 
-    // ❌ Already active
     if (
       attendance &&
       ["CHECKED_IN", "REACHED_OFFICE"].includes(attendance.status)
@@ -566,7 +557,6 @@ exports.checkIn = async (req, res) => {
       });
     }
 
-    // 📏 distance logic
     const officeLat = Number(process.env.OFFICE_LAT);
     const officeLng = Number(process.env.OFFICE_LNG);
     const officeRadius = Number(process.env.OFFICE_RADIUS);
@@ -575,36 +565,32 @@ exports.checkIn = async (req, res) => {
       latitude,
       longitude,
       officeLat,
-      officeLng
+      officeLng,
     );
 
     const isInOffice = distance <= officeRadius;
     const status = isInOffice ? "REACHED_OFFICE" : "CHECKED_IN";
 
-    // ✅ REUSE EXISTING ATTENDANCE (IMPORTANT)
-    if (attendance) {
-      attendance.checkInTime = new Date();
-      attendance.checkOutTime = null;
-      attendance.totalHours = null;
-      attendance.checkOutLocation = null;
-      attendance.checkOutAddress = null;
-      attendance.status = status;
-    } else {
+    if (!attendance) {
       attendance = new Attendance({
         employeeId,
         date: today,
-        checkInTime: new Date(),
-        status,
       });
     }
 
+    attendance.checkInTime = new Date();
     attendance.checkInAddress = address || "Unknown";
+    attendance.status = status;
     attendance.distanceFromOffice = Math.round(distance);
+
+    attendance.checkInLocation = {
+      type: "Point",
+      coordinates: [longitude, latitude],
+    };
+
     attendance.currentLocation = {
       type: "Point",
       coordinates: [longitude, latitude],
-      address: address || "Unknown",
-      timestamp: new Date(),
     };
 
     await attendance.save();
@@ -612,7 +598,10 @@ exports.checkIn = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Checked in successfully",
-      data: attendance,
+      data: {
+        hasReachedOffice: isInOffice,
+        attendance,
+      },
     });
   } catch (e) {
     console.error("CHECK-IN ERROR:", e);
@@ -670,65 +659,37 @@ exports.checkOut = async (req, res) => {
   }
 };
 
-/* ================== UPDATE LOCATION ================== */
+/* ================== UPDATE LOCATION (🔥 FIXED) ================== */
 
 exports.updateLocation = async (req, res) => {
   try {
-    const { latitude, longitude, address } = req.body;
     const employeeId = req.user.id;
-    const today = new Date().toISOString().split("T")[0];
+    const { latitude, longitude, address } = req.body;
 
-    const attendance = await Attendance.findOne({
-      employeeId,
-      date: today,
-      checkOutTime: null,
-    });
-
-    if (!attendance) {
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
       return res.status(400).json({
         success: false,
-        message: "No active attendance",
+        message: "Latitude and longitude must be numbers",
       });
     }
 
-    const officeLat = Number(process.env.OFFICE_LAT);
-    const officeLng = Number(process.env.OFFICE_LNG);
-    const officeRadius = Number(process.env.OFFICE_RADIUS);
-
-    const distance = calculateDistance(
-      latitude,
-      longitude,
-      officeLat,
-      officeLng
-    );
-
-    const isInOffice = distance <= officeRadius;
-
-    attendance.currentLocation = {
-      type: "Point",
-      coordinates: [longitude, latitude],
-      timestamp: new Date(),
-    };
-
-    if (isInOffice && attendance.status === "CHECKED_IN") {
-      attendance.status = "REACHED_OFFICE";
-    }
-
-    await attendance.save();
-
-    res.json({
-      success: true,
-      message: "Location updated",
-      data: {
-        isInOffice,
-        distanceFromOffice: Math.round(distance),
+    await Location.create({
+      employeeId,
+      location: {
+        type: "Point",
+        coordinates: [longitude, latitude], // GeoJSON order
       },
+      address: address || "Moving",
+      timestamp: new Date(),
+      status: "ACTIVE",
     });
+
+    res.json({ success: true });
   } catch (err) {
+    console.error("UPDATE LOCATION ERROR:", err);
     res.status(500).json({
       success: false,
-      message: "Location update failed",
-      error: err.message,
+      message: err.message,
     });
   }
 };

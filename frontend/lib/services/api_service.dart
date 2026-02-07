@@ -418,6 +418,329 @@
 //   }
 // }
 // lib/services/api_service.dart
+
+// import 'package:dio/dio.dart';
+// import 'dart:convert';
+// import 'package:http/http.dart' as http;
+// import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+// import '../models/user.dart';
+// import '../models/attendance.dart';
+
+// class ApiService {
+//   // 🔴 baseUrl already contains /api
+//   static const String baseUrl =
+//       'https://vickey-neustic-avoidably.ngrok-free.dev/api';
+
+//   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+//   late Dio dio;
+
+//   ApiService() {
+//     dio = Dio(
+//       BaseOptions(
+//         baseUrl: baseUrl,
+//         connectTimeout: const Duration(seconds: 15),
+//         receiveTimeout: const Duration(seconds: 15),
+//         headers: {
+//           'ngrok-skip-browser-warning': 'true',
+//           'Content-Type': 'application/json',
+//         },
+//       ),
+//     );
+
+//     // ✅ AUTO ADD TOKEN TO EVERY REQUEST
+//     dio.interceptors.add(
+//       InterceptorsWrapper(
+//         onRequest: (options, handler) async {
+//           final token = await getToken();
+//           if (token != null) {
+//             options.headers["Authorization"] = "Bearer $token";
+//           }
+//           return handler.next(options);
+//         },
+//       ),
+//     );
+//   }
+
+//   // ============================================================
+//   // TOKEN HELPERS
+//   // ============================================================
+
+//   Future<void> saveToken(String token) async {
+//     await _storage.write(key: 'token', value: token);
+//   }
+
+//   Future<String?> getToken() async {
+//     return await _storage.read(key: 'token');
+//   }
+
+//   Future<void> clearToken() async {
+//     await _storage.delete(key: 'token');
+//   }
+
+//   Future<Map<String, String>> _headers({bool auth = true}) async {
+//     final headers = {
+//       'Content-Type': 'application/json',
+//       'ngrok-skip-browser-warning': 'true',
+//     };
+
+//     if (auth) {
+//       final token = await getToken();
+//       if (token == null) {
+//         throw Exception('Auth token missing. Please login again.');
+//       }
+//       headers['Authorization'] = 'Bearer $token';
+//     }
+
+//     return headers;
+//   }
+
+//   // ============================================================
+//   // AUTH
+//   // ============================================================
+
+//   Future<Map<String, dynamic>> login(String email, String password) async {
+//     final response = await http.post(
+//       Uri.parse('$baseUrl/auth/login'),
+//       headers: await _headers(auth: false),
+//       body: jsonEncode({'email': email, 'password': password}),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final data = jsonDecode(response.body);
+//     await saveToken(data['data']['token']);
+//     return data;
+//   }
+
+//   Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
+//     final response = await http.post(
+//       Uri.parse('$baseUrl/auth/register'),
+//       headers: await _headers(auth: false),
+//       body: jsonEncode(userData),
+//     );
+
+//     if (response.statusCode != 201) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final data = jsonDecode(response.body);
+
+//     if (data['data']?['token'] != null) {
+//       await saveToken(data['data']['token']);
+//     }
+
+//     return data;
+//   }
+
+//   Future<User> getCurrentUser() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/auth/me'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final data = jsonDecode(response.body);
+//     return User.fromJson(data['data']['user']);
+//   }
+
+//   // ============================================================
+//   // EMPLOYEE
+//   // ============================================================
+
+//   Future<Map<String, dynamic>> checkIn(
+//     double latitude,
+//     double longitude,
+//     String address,
+//   ) async {
+//     final response = await http.post(
+//       Uri.parse('$baseUrl/employee/check-in'),
+//       headers: await _headers(),
+//       body: jsonEncode({
+//         'latitude': latitude,
+//         'longitude': longitude,
+//         'address': address,
+//       }),
+//     );
+
+//     if (response.statusCode != 200 && response.statusCode != 201) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     return jsonDecode(response.body);
+//   }
+
+//   Future<Map<String, dynamic>> checkOut(
+//     double lat,
+//     double lng,
+//     String address,
+//   ) async {
+//     final response = await http.post(
+//       Uri.parse('$baseUrl/employee/check-out'),
+//       headers: await _headers(),
+//       body: jsonEncode({'latitude': lat, 'longitude': lng, 'address': address}),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     return jsonDecode(response.body);
+//   }
+
+//   Future<Map<String, dynamic>> updateLocation(
+//     double lat,
+//     double lng,
+//     String address,
+//   ) async {
+//     final response = await http.post(
+//       Uri.parse('$baseUrl/employee/location'),
+//       headers: await _headers(),
+//       body: jsonEncode({'latitude': lat, 'longitude': lng, 'address': address}),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     return jsonDecode(response.body);
+//   }
+
+//   Future<Map<String, dynamic>> getMyStatus() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/employee/status'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     return jsonDecode(response.body)['data'];
+//   }
+
+//   Future<List<Attendance>> getMyAttendance() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/employee/attendance'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['attendance'];
+//     return list.map((e) => Attendance.fromJson(e)).toList();
+//   }
+
+//   // ============================================================
+//   // ⭐ ROUTE REPLAY (USING DIO)
+//   // ============================================================
+
+//   Future<Map<String, dynamic>> getEmployeeRoute(
+//       String empId, String date) async {
+//     final res = await dio.get(
+//       "/admin/employee/$empId/route",
+//       queryParameters: {"date": date},
+//     );
+
+//     return res.data;
+//   }
+
+//   // ============================================================
+//   // ADMIN
+//   // ============================================================
+
+//   Future<List<User>> getAllEmployees() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/employees'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['employees'];
+//     return list.map((e) => User.fromJson(e)).toList();
+//   }
+
+//   Future<List<Map<String, dynamic>>> getCheckedInEmployees() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/checked-in-employees'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['employees'];
+//     return list.map((e) => Map<String, dynamic>.from(e)).toList();
+//   }
+
+//   Future<List<Map<String, dynamic>>> getReachedEmployees() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/reached-employees'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['employees'];
+//     return list.map((e) => Map<String, dynamic>.from(e)).toList();
+//   }
+
+//   Future<List<Map<String, dynamic>>> getCheckedOutEmployees() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/checked-out-employees'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['employees'];
+//     return list.map((e) => Map<String, dynamic>.from(e)).toList();
+//   }
+
+//   Future<List<User>> getNotCheckedInEmployees() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/not-checked-in-employees'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     final List list = jsonDecode(response.body)['data']['employees'];
+//     return list.map((e) => User.fromJson(e)).toList();
+//   }
+
+//   Future<Map<String, dynamic>> getDashboardStats() async {
+//     final response = await http.get(
+//       Uri.parse('$baseUrl/admin/dashboard-stats'),
+//       headers: await _headers(),
+//     );
+
+//     if (response.statusCode != 200) {
+//       throw Exception(jsonDecode(response.body)['message']);
+//     }
+
+//     return jsonDecode(response.body)['data'];
+//   }
+// }
+
+import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -425,11 +748,40 @@ import '../models/user.dart';
 import '../models/attendance.dart';
 
 class ApiService {
-  // 🔴 IMPORTANT: baseUrl already contains /api
+  // 🔴 baseUrl already contains /api
   static const String baseUrl =
       'https://vickey-neustic-avoidably.ngrok-free.dev/api';
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  late Dio dio;
+
+  ApiService() {
+    dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'Content-Type': 'application/json',
+        },
+      ),
+    );
+
+    // ✅ AUTO ADD TOKEN TO EVERY REQUEST
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final token = await getToken();
+          if (token != null) {
+            options.headers["Authorization"] = "Bearer $token";
+          }
+          return handler.next(options);
+        },
+      ),
+    );
+  }
 
   // ============================================================
   // TOKEN HELPERS
@@ -447,7 +799,6 @@ class ApiService {
     await _storage.delete(key: 'token');
   }
 
-  // SINGLE SOURCE OF TRUTH FOR HEADERS
   Future<Map<String, String>> _headers({bool auth = true}) async {
     final headers = {
       'Content-Type': 'application/json',
@@ -477,12 +828,46 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final data = jsonDecode(response.body);
     await saveToken(data['data']['token']);
     return data;
+  }
+
+  Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/register'),
+      headers: await _headers(auth: false),
+      body: jsonEncode(userData),
+    );
+
+    if (response.statusCode != 201) {
+      throw Exception(jsonDecode(response.body)['message']);
+    }
+
+    final data = jsonDecode(response.body);
+
+    if (data['data']?['token'] != null) {
+      await saveToken(data['data']['token']);
+    }
+
+    return data;
+  }
+
+  Future<User> getCurrentUser() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/auth/me'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(jsonDecode(response.body)['message']);
+    }
+
+    final data = jsonDecode(response.body);
+    return User.fromJson(data['data']['user']);
   }
 
   // ============================================================
@@ -495,7 +880,7 @@ class ApiService {
     String address,
   ) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/employee/check-in'), // ✅ FIXED
+      Uri.parse('$baseUrl/employee/check-in'),
       headers: await _headers(),
       body: jsonEncode({
         'latitude': latitude,
@@ -503,9 +888,6 @@ class ApiService {
         'address': address,
       }),
     );
-
-    print('📡 STATUS: ${response.statusCode}');
-    print('📄 BODY: ${response.body}');
 
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception(jsonDecode(response.body)['message']);
@@ -526,7 +908,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     return jsonDecode(response.body);
@@ -544,7 +926,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     return jsonDecode(response.body);
@@ -557,7 +939,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     return jsonDecode(response.body)['data'];
@@ -570,11 +952,25 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['attendance'];
     return list.map((e) => Attendance.fromJson(e)).toList();
+  }
+
+  // ============================================================
+  // ⭐ ROUTE REPLAY (USING DIO)
+  // ============================================================
+
+  Future<Map<String, dynamic>> getEmployeeRoute(
+      String empId, String date) async {
+    final res = await dio.get(
+      "/admin/employee/$empId/route",
+      queryParameters: {"date": date},
+    );
+
+    return res.data;
   }
 
   // ============================================================
@@ -588,7 +984,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['employees'];
@@ -602,7 +998,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['employees'];
@@ -616,7 +1012,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['employees'];
@@ -630,7 +1026,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['employees'];
@@ -644,7 +1040,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     final List list = jsonDecode(response.body)['data']['employees'];
@@ -658,44 +1054,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(response.body);
+      throw Exception(jsonDecode(response.body)['message']);
     }
 
     return jsonDecode(response.body)['data'];
-  }
-
-  Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/register'),
-      headers: await _headers(auth: false),
-      body: jsonEncode(userData),
-    );
-
-    if (response.statusCode != 201) {
-      throw Exception(response.body);
-    }
-
-    final data = jsonDecode(response.body);
-
-    // 🔑 Save token immediately after register
-    if (data['data']?['token'] != null) {
-      await saveToken(data['data']['token']);
-    }
-
-    return data;
-  }
-
-  Future<User> getCurrentUser() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/auth/me'),
-      headers: await _headers(),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(response.body);
-    }
-
-    final data = jsonDecode(response.body);
-    return User.fromJson(data['data']['user']);
   }
 }
