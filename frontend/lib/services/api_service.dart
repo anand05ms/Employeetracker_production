@@ -746,11 +746,11 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user.dart';
 import '../models/attendance.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // 🔴 baseUrl already contains /api
-  static const String baseUrl =
-      'https://vickey-neustic-avoidably.ngrok-free.dev/api';
+  static const String baseUrl = "https://emptracker-backend.onrender.com/api";
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
@@ -789,10 +789,6 @@ class ApiService {
 
   Future<void> saveToken(String token) async {
     await _storage.write(key: 'token', value: token);
-  }
-
-  Future<String?> getToken() async {
-    return await _storage.read(key: 'token');
   }
 
   Future<void> clearToken() async {
@@ -1045,6 +1041,374 @@ class ApiService {
 
     final List list = jsonDecode(response.body)['data']['employees'];
     return list.map((e) => User.fromJson(e)).toList();
+  }
+
+  Future<String?> getToken() async {
+    return await _storage.read(key: 'token');
+  }
+
+  // ============================================
+  // ENHANCED LOCATION TRACKING
+  // ============================================
+
+  /// Update location with speed, altitude, accuracy
+  Future<Map<String, dynamic>> updateLocationEnhanced({
+    required double latitude,
+    required double longitude,
+    required String address,
+    double? speed,
+    double? altitude,
+    double? accuracy,
+    double? heading,
+  }) async {
+    final url = Uri.parse('$baseUrl/employee/location-enhanced');
+
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
+        'speed': speed,
+        'altitude': altitude,
+        'accuracy': accuracy,
+        'heading': heading,
+        'timestamp': DateTime.now().toIso8601String(),
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to update enhanced location: ${response.body}');
+    }
+  }
+
+  // ============================================
+  // CONTACT MANAGEMENT
+  // ============================================
+
+  /// Get all contacts assigned to current employee
+  Future<List<dynamic>> getMyContacts() async {
+    final url = Uri.parse('$baseUrl/api/contacts/my-contacts');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['contacts'] ?? [];
+    } else {
+      throw Exception('Failed to get contacts: ${response.body}');
+    }
+  }
+
+  /// Add a new contact
+  Future<Map<String, dynamic>> addContact({
+    required String name,
+    required String company,
+    String? phone,
+    String? email,
+    String? address,
+    double? latitude,
+    double? longitude,
+    String? category,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/contacts/add');
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'name': name,
+        'company': company,
+        'phone': phone,
+        'email': email,
+        'address': address,
+        'latitude': latitude,
+        'longitude': longitude,
+        'category': category,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to add contact: ${response.body}');
+    }
+  }
+
+  /// Get contact details
+  Future<Map<String, dynamic>> getContact(String contactId) async {
+    final url = Uri.parse('$baseUrl/api/contacts/$contactId');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to get contact: ${response.body}');
+    }
+  }
+
+  // ============================================
+  // VISIT TRACKING
+  // ============================================
+
+  /// Check in to a visit
+  Future<Map<String, dynamic>> visitCheckIn({
+    required String contactId,
+    required double latitude,
+    required double longitude,
+    required String address,
+    String? selfieUrl,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/visits/check-in');
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'contactId': contactId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
+        'selfie': selfieUrl,
+        'timestamp': DateTime.now().toIso8601String(),
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to check in: ${response.body}');
+    }
+  }
+
+  /// Check out from a visit
+  Future<Map<String, dynamic>> visitCheckOut({
+    required String visitId,
+    required double latitude,
+    required double longitude,
+    int? rating,
+    String? remarks,
+    String? nextVisitDate,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/visits/check-out');
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'visitId': visitId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'rating': rating,
+        'remarks': remarks,
+        'nextVisitDate': nextVisitDate,
+        'timestamp': DateTime.now().toIso8601String(),
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to check out: ${response.body}');
+    }
+  }
+
+  /// Add photo to visit
+  Future<Map<String, dynamic>> addVisitPhoto({
+    required String visitId,
+    required String photoUrl,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/visits/$visitId/photo');
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'photo': photoUrl,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to add photo: ${response.body}');
+    }
+  }
+
+  /// Add notes to visit
+  Future<Map<String, dynamic>> addVisitNotes({
+    required String visitId,
+    String? textNotes,
+    String? audioNoteUrl,
+  }) async {
+    final url = Uri.parse('$baseUrl/api/visits/$visitId/notes');
+    final token = await getToken();
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'textNotes': textNotes,
+        'audioNote': audioNoteUrl,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to add notes: ${response.body}');
+    }
+  }
+
+  /// Get my visits (today/this week/this month)
+  Future<List<dynamic>> getMyVisits({String period = 'today'}) async {
+    final url = Uri.parse('$baseUrl/api/visits/my-visits?period=$period');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['visits'] ?? [];
+    } else {
+      throw Exception('Failed to get visits: ${response.body}');
+    }
+  }
+
+  // ============================================
+  // LIVE TRACKING (ADMIN)
+  // ============================================
+
+  /// Get all employees with their latest location (Admin)
+  Future<List<dynamic>> getLiveEmployeeLocations() async {
+    final url = Uri.parse('$baseUrl/api/admin/live-locations');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['employees'] ?? [];
+    } else {
+      throw Exception('Failed to get live locations: ${response.body}');
+    }
+  }
+
+  /// Get specific employee's live location (Admin)
+  Future<Map<String, dynamic>> getEmployeeLiveLocation(
+      String employeeId) async {
+    final url = Uri.parse('$baseUrl/api/admin/live-location/$employeeId');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to get employee location: ${response.body}');
+    }
+  }
+
+  // ============================================
+  // STATISTICS & REPORTS
+  // ============================================
+
+  /// Get my statistics
+  Future<Map<String, dynamic>> getMyStats({String period = 'today'}) async {
+    final url = Uri.parse('$baseUrl/api/stats/my-stats?period=$period');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to get stats: ${response.body}');
+    }
+  }
+
+  /// Get employee report (Admin)
+  Future<Map<String, dynamic>> getEmployeeReport({
+    required String employeeId,
+    required String startDate,
+    required String endDate,
+  }) async {
+    final url = Uri.parse(
+        '$baseUrl/api/admin/report/$employeeId?start=$startDate&end=$endDate');
+    final token = await getToken();
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to get report: ${response.body}');
+    }
   }
 
   Future<Map<String, dynamic>> getDashboardStats() async {

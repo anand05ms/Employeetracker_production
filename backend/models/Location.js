@@ -133,6 +133,7 @@
 // locationSchema.index({ employeeId: 1, timestamp: -1 });
 
 // module.exports = mongoose.model("Location", locationSchema);
+
 const mongoose = require("mongoose");
 
 const locationSchema = new mongoose.Schema({
@@ -155,6 +156,41 @@ const locationSchema = new mongoose.Schema({
     },
   },
 
+  address: {
+    type: String,
+    default: "Unknown",
+  },
+
+  speed: {
+    type: Number,
+    default: 0,
+  },
+
+  altitude: {
+    type: Number,
+    default: 0,
+  },
+
+  accuracy: {
+    type: Number,
+    default: 0,
+  },
+
+  heading: {
+    type: Number,
+    default: 0,
+  },
+
+  status: {
+    type: String,
+    default: "ACTIVE",
+  },
+
+  isInOffice: {
+    type: Boolean,
+    default: false,
+  },
+
   timestamp: {
     type: Date,
     required: true,
@@ -164,7 +200,7 @@ const locationSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 60 * 60 * 24 * 7, // ✅ auto delete after 7 days
+    expires: 60 * 60 * 24 * 7, // auto delete after 7 days
   },
 });
 

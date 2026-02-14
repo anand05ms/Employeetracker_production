@@ -202,6 +202,7 @@
 // });
 
 // module.exports = { app, server, io };
+
 // server.js
 require("dotenv").config();
 const express = require("express");
@@ -280,7 +281,7 @@ app.use(
       "X-Requested-With",
     ],
     credentials: true,
-  })
+  }),
 );
 
 // Handle ngrok browser warning
@@ -298,7 +299,7 @@ app.use((req, res, next) => {
   console.log(
     `📥 ${req.method} ${req.originalUrl} - Auth: ${
       req.headers.authorization ? "YES" : "NO"
-    }`
+    }`,
   );
   next();
 });
@@ -330,10 +331,10 @@ app.get("/", (req, res) => {
 
 // Health checks
 app.get("/health", (req, res) =>
-  res.json({ success: true, status: "healthy" })
+  res.json({ success: true, status: "healthy" }),
 );
 app.get("/api/health", (req, res) =>
-  res.json({ success: true, status: "healthy" })
+  res.json({ success: true, status: "healthy" }),
 );
 
 // Debug users route
@@ -433,7 +434,7 @@ server.listen(PORT, "0.0.0.0", async () => {
   console.log(`📡 Port: ${PORT}`);
   console.log(`🖥️  Local: http://localhost:${PORT}`);
   console.log(`📱 Network: http://${localIP}:${PORT}`);
-  console.log(`🌐  ngrok: https://vickey-neustic-avoidably.ngrok-free.dev`);
+  console.log(`🌐 https://emptracker-backend.onrender.com`);
   console.log(`✅ CORS: ALL localhost + ngrok ALLOWED`);
   console.log(`✅ Login: admin@gmail.com / Admin@123`);
   console.log(`🚀 ========================================\n`);

@@ -1,298 +1,433 @@
 // // lib/services/background_location_service.dart
 // import 'dart:async';
+// import 'package:flutter_background_service/flutter_background_service.dart';
+// import 'package:flutter_background_service_android/flutter_background_service_android.dart';
+// import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // import 'package:geolocator/geolocator.dart';
-// import 'package:geocoding/geocoding.dart';
-// import 'api_service.dart';
+// import 'package:shared_preferences/shared_preferences.dart';
+// import 'dart:convert';
 
 // class BackgroundLocationService {
-//   static final BackgroundLocationService _instance =
-//       BackgroundLocationService._internal();
-//   factory BackgroundLocationService() => _instance;
-//   BackgroundLocationService._internal();
+//   static const String _channelId = 'location_tracking_channel';
+//   static const String _channelName = 'Location Tracking';
+//   static const int _notificationId = 888;
 
-//   final ApiService _apiService = ApiService();
-//   StreamSubscription<Position>? _positionSubscription;
-//   bool _isTracking = false;
+//   final FlutterBackgroundService _service = FlutterBackgroundService();
 
-//   // Start tracking location
-//   Future<void> startTracking() async {
-//     if (_isTracking) {
-//       print('⚠️ Already tracking location');
-//       return;
+//   // Start background tracking
+//   Future<void> start({
+//     required String userId,
+//     required String userName,
+//   }) async {
+//     // Initialize service
+//     await _initializeService();
+
+//     // Store user info
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setString('user_id', userId);
+//     await prefs.setString('user_name', userName);
+//     await prefs.setBool('is_tracking', true);
+
+//     // Start the service
+//     await _service.startService();
+
+//     print('🟢 Background service started for $userName');
+//   }
+
+//   // Stop background tracking
+//   Future<void> stop() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setBool('is_tracking', false);
+
+//     _service.invoke('stop'); // Don't await - returns void
+//     print('🔴 Background service stop signal sent');
+//   }
+
+//   // Check if service is running
+//   Future<bool> isRunning() async {
+//     return await _service.isRunning();
+//   }
+
+//   // Get pending location updates from SharedPreferences
+//   Future<List<Map<String, dynamic>>> getPendingUpdates() async {
+//     try {
+//       final prefs = await SharedPreferences.getInstance();
+//       final queueJson = prefs.getString('location_queue') ?? '[]';
+//       final decoded = jsonDecode(queueJson);
+
+//       if (decoded is List) {
+//         return List<Map<String, dynamic>>.from(
+//             decoded.map((item) => Map<String, dynamic>.from(item)));
+//       }
+//       return [];
+//     } catch (e) {
+//       print('❌ Error getting pending updates: $e');
+//       return [];
 //     }
+//   }
 
-//     print('🎯 Starting background location tracking...');
-//     _isTracking = true;
+//   // Clear processed updates
+//   Future<void> clearPendingUpdates() async {
+//     try {
+//       final prefs = await SharedPreferences.getInstance();
+//       await prefs.setString('location_queue', '[]');
+//       print('✅ Cleared pending updates');
+//     } catch (e) {
+//       print('❌ Error clearing updates: $e');
+//     }
+//   }
 
-//     // Listen to position stream (updates every 10 meters)
-//     _positionSubscription = Geolocator.getPositionStream(
-//       locationSettings: const LocationSettings(
-//         accuracy: LocationAccuracy.high,
-//         distanceFilter: 10, // Update every 10 meters
-//       ),
-//     ).listen(
-//       (Position position) async {
-//         print(
-//             '📍 Location changed: ${position.latitude}, ${position.longitude}');
-//         await _sendLocationUpdate(position);
-//       },
-//       onError: (error) {
-//         print('❌ Location stream error: $error');
-//       },
+//   // Initialize the background service
+//   Future<void> _initializeService() async {
+//     final service = FlutterBackgroundService();
+
+//     // Create notification channel (Android)
+//     const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//       _channelId,
+//       _channelName,
+//       description: 'Tracking your location for attendance',
+//       importance: Importance.low,
+//       playSound: false,
 //     );
 
-//     print('✅ Background location tracking started');
+//     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+//         FlutterLocalNotificationsPlugin();
+
+//     await flutterLocalNotificationsPlugin
+//         .resolvePlatformSpecificImplementation<
+//             AndroidFlutterLocalNotificationsPlugin>()
+//         ?.createNotificationChannel(channel);
+
+//     await service.configure(
+//       androidConfiguration: AndroidConfiguration(
+//         onStart: onStart,
+//         autoStart: false,
+//         isForegroundMode: true,
+//         notificationChannelId: _channelId,
+//         initialNotificationTitle: 'Location Tracking Active',
+//         initialNotificationContent: 'Tracking your location...',
+//         foregroundServiceNotificationId: _notificationId,
+//       ),
+//       iosConfiguration: IosConfiguration(
+//         autoStart: false,
+//         onForeground: onStart,
+//         onBackground: onIosBackground,
+//       ),
+//     );
 //   }
 
-//   // Send location update to backend
-//   Future<void> _sendLocationUpdate(Position position) async {
-//     try {
-//       // Get address from coordinates
-//       String address = 'Moving';
+//   // iOS background handler
+//   @pragma('vm:entry-point')
+//   static Future<bool> onIosBackground(ServiceInstance service) async {
+//     return true;
+//   }
+
+//   // Main background service entry point
+//   @pragma('vm:entry-point')
+//   static void onStart(ServiceInstance service) async {
+//     print('🟢 Background service started');
+
+//     // Track service state
+//     bool isServiceRunning = true;
+
+//     if (service is AndroidServiceInstance) {
+//       service.on('stop').listen((event) {
+//         isServiceRunning = false;
+//         service.stopSelf();
+//         print('🔴 Service stopped by user');
+//       });
+
+//       service.setAsForegroundService();
+//     }
+
+//     // Get user info
+//     final prefs = await SharedPreferences.getInstance();
+//     final userId = prefs.getString('user_id') ?? '';
+//     final userName = prefs.getString('user_name') ?? 'Employee';
+
+//     print('👤 Tracking for: $userName ($userId)');
+
+//     // Timer for periodic location updates
+//     Timer.periodic(const Duration(seconds: 30), (timer) async {
+//       if (!isServiceRunning) {
+//         timer.cancel();
+//         return;
+//       }
+
+//       // Check if tracking is still enabled
+//       final isTracking = prefs.getBool('is_tracking') ?? false;
+//       if (!isTracking) {
+//         print('⏸️ Tracking disabled');
+//         timer.cancel();
+//         return;
+//       }
+
 //       try {
-//         List<Placemark> placemarks = await placemarkFromCoordinates(
+//         // Get current location
+//         final position = await Geolocator.getCurrentPosition(
+//           desiredAccuracy: LocationAccuracy.high,
+//           timeLimit: const Duration(seconds: 10),
+//         ).timeout(const Duration(seconds: 15));
+
+//         print('📍 BG Location: ${position.latitude}, ${position.longitude}');
+
+//         // Save location to SharedPreferences
+//         await _saveLocationUpdate(
 //           position.latitude,
 //           position.longitude,
+//           prefs,
 //         );
-//         if (placemarks.isNotEmpty) {
-//           final place = placemarks.first;
-//           address = '${place.street ?? ''}, ${place.locality ?? ''}';
+
+//         // Update notification
+//         if (service is AndroidServiceInstance) {
+//           service.setForegroundNotificationInfo(
+//             title: 'Location Tracking Active',
+//             content:
+//                 'Last update: ${DateTime.now().toString().substring(11, 19)} | Distance: ${position.accuracy.toInt()}m',
+//           );
 //         }
 //       } catch (e) {
-//         print('⚠️ Failed to get address: $e');
-//       }
+//         print('❌ Background location error: $e');
 
-//       print('🚀 Sending location update to backend...');
-
-//       final response = await _apiService.updateLocation(
-//         position.latitude,
-//         position.longitude,
-//         address,
-//       );
-
-//       if (response['success']) {
-//         print('✅ Location update sent successfully');
-
-//         // Check if reached office
-//         if (response['data']?['hasReachedOffice'] == true) {
-//           print('🎉 Employee reached office!');
-//           await stopTracking(); // Stop tracking when reached
+//         // Update notification with error
+//         if (service is AndroidServiceInstance) {
+//           service.setForegroundNotificationInfo(
+//             title: 'Location Tracking Active',
+//             content: 'Waiting for GPS signal...',
+//           );
 //         }
-//       } else {
-//         print('⚠️ Location update failed: ${response['message']}');
 //       }
+//     });
+//   }
+
+//   // Save location update to SharedPreferences
+//   static Future<void> _saveLocationUpdate(
+//     double lat,
+//     double lng,
+//     SharedPreferences prefs,
+//   ) async {
+//     try {
+//       final update = {
+//         'latitude': lat,
+//         'longitude': lng,
+//         'timestamp': DateTime.now().toIso8601String(),
+//       };
+
+//       // Save latest location
+//       await prefs.setString('latest_location', jsonEncode(update));
+
+//       // Add to pending queue
+//       final queueJson = prefs.getString('location_queue') ?? '[]';
+//       List<dynamic> queue;
+
+//       try {
+//         queue = jsonDecode(queueJson);
+//       } catch (e) {
+//         print('❌ Error decoding queue, resetting: $e');
+//         queue = [];
+//       }
+
+//       queue.add(update);
+
+//       // Keep only last 200 updates
+//       if (queue.length > 200) {
+//         queue = queue.sublist(queue.length - 200);
+//       }
+
+//       await prefs.setString('location_queue', jsonEncode(queue));
+//       print('📦 Saved to local queue (${queue.length} pending)');
 //     } catch (e) {
-//       print('❌ Error sending location update: $e');
+//       print('❌ Error saving location: $e');
 //     }
 //   }
-
-//   // Stop tracking
-//   Future<void> stopTracking() async {
-//     print('🛑 Stopping background location tracking...');
-//     await _positionSubscription?.cancel();
-//     _positionSubscription = null;
-//     _isTracking = false;
-//     print('✅ Background location tracking stopped');
-//   }
-
-//   // Check if currently tracking
-//   bool get isTracking => _isTracking;
 // }
+
 // lib/services/background_location_service.dart
-// lib/services/background_location_service.dart
+
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'persistent_queue_service.dart';
 
 class BackgroundLocationService {
-  static const String _channelId = 'location_tracking_channel';
-  static const String _channelName = 'Location Tracking';
-  static const int _notificationId = 888;
+  static const String _baseUrl = "https://emptracker-backend.onrender.com/api";
+  static const int _interval = 10;
+  static const String _channelId = "tracking_channel";
+  static const int _notificationId = 999;
 
   final FlutterBackgroundService _service = FlutterBackgroundService();
 
-  // Start background tracking
+  // ============================================================
+  // PUBLIC METHODS (USED BY UI)
+  // ============================================================
+
   Future<void> start({
     required String userId,
     required String userName,
-    required Function(double lat, double lng) onLocationUpdate,
   }) async {
-    // Initialize service
-    await _initializeService();
-
-    // Store callback info (we'll use SharedPreferences for communication)
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', userId);
-    await prefs.setString('user_name', userName);
+    await prefs.setBool('is_tracking', true);
 
-    // Start the service
+    await _configureService();
+
     await _service.startService();
-
-    print('🟢 Background service started for $userName');
+    print("🟢 Background tracking started");
   }
-
-  // Stop background tracking
 
   Future<void> stop() async {
-    _service.invoke('stop');
-    print('🔴 Background service stopped');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_tracking', false);
+    _service.invoke("stop");
+    print("🔴 Background tracking stopped");
   }
 
-  // Check if service is running
   Future<bool> isRunning() async {
     return await _service.isRunning();
   }
 
-  // Initialize the background service
-  Future<void> _initializeService() async {
-    final service = FlutterBackgroundService();
+  Future<List<Map<String, dynamic>>> getPendingUpdates() async {
+    final queue = PersistentQueueService();
+    await queue.initialize();
+    return [];
+  }
 
-    // Create notification channel (Android)
+  Future<void> clearPendingUpdates() async {
+    final queue = PersistentQueueService();
+    await queue.clearQueue();
+  }
+
+  // ============================================================
+  // SERVICE CONFIG
+  // ============================================================
+
+  Future<void> _configureService() async {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       _channelId,
-      _channelName,
-      description: 'Tracking your location for attendance',
+      "Location Tracking",
+      description: "Background location tracking",
       importance: Importance.low,
-      playSound: false,
     );
 
-    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    final FlutterLocalNotificationsPlugin notifications =
         FlutterLocalNotificationsPlugin();
 
-    await flutterLocalNotificationsPlugin
+    await notifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    await service.configure(
+    await _service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,
         autoStart: false,
-        isForegroundMode: true, // CRITICAL: Run as foreground service
+        isForegroundMode: true,
         notificationChannelId: _channelId,
-        initialNotificationTitle: 'Location Tracking Active',
-        initialNotificationContent: 'Tracking your location...',
+        initialNotificationTitle: "Tracking Active",
+        initialNotificationContent: "Location tracking running",
         foregroundServiceNotificationId: _notificationId,
       ),
       iosConfiguration: IosConfiguration(
         autoStart: false,
         onForeground: onStart,
-        onBackground: onIosBackground,
       ),
     );
   }
 
-  // iOS background handler
-  @pragma('vm:entry-point')
-  static Future<bool> onIosBackground(ServiceInstance service) async {
-    return true;
-  }
+  // ============================================================
+  // BACKGROUND ENTRY POINT
+  // ============================================================
 
-  // Main background service entry point
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) async {
-    print('🟢 Background service started');
+    final queue = PersistentQueueService();
+    await queue.initialize();
+
+    final prefs = await SharedPreferences.getInstance();
 
     if (service is AndroidServiceInstance) {
       service.on('stop').listen((event) {
         service.stopSelf();
-        print('🔴 Service stopped by user');
       });
 
       service.setAsForegroundService();
     }
 
-    // Get user info from shared preferences
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('user_id') ?? '';
-    final userName = prefs.getString('user_name') ?? 'Employee';
-
-    // Track if service should continue running
-    bool isServiceRunning = true;
-
-    service.on('stop').listen((event) {
-      isServiceRunning = false;
-    });
-
-    // Timer for periodic location updates
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
-      if (!isServiceRunning) {
+    Timer.periodic(const Duration(seconds: _interval), (timer) async {
+      final isTracking = prefs.getBool('is_tracking') ?? false;
+      if (!isTracking) {
         timer.cancel();
         return;
       }
 
       try {
-        // Get current location
         final position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high,
         );
 
-        print('📍 BG Location: ${position.latitude}, ${position.longitude}');
+        final token = prefs.getString('token');
+        if (token == null) {
+          print("❌ No token available");
+          return;
+        }
 
-        // Store location in shared preferences for main app to pick up
-        await _saveLocationUpdate(
-          position.latitude,
-          position.longitude,
-          prefs,
-        );
+        final payload = {
+          "latitude": position.latitude,
+          "longitude": position.longitude,
+          "speed": position.speed * 3.6,
+          "altitude": position.altitude,
+          "accuracy": position.accuracy,
+          "heading": position.heading,
+          "timestamp": DateTime.now().toIso8601String(),
+          "address": "Background",
+        };
 
-        // Update notification
-        if (service is AndroidServiceInstance) {
-          service.setForegroundNotificationInfo(
-            title: 'Location Tracking Active',
-            content:
-                'Last update: ${DateTime.now().toString().substring(11, 19)}',
+        // Try direct send
+        try {
+          final res = await http.post(
+            Uri.parse("$_baseUrl/employee/location-enhanced"),
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer $token"
+            },
+            body: jsonEncode(payload),
+          );
+
+          if (res.statusCode != 200 && res.statusCode != 201) {
+            throw Exception("Server rejected");
+          }
+
+          print("✅ Sent location to server");
+        } catch (_) {
+          print("⚠️ Offline, saving to queue");
+          await queue.addLocationUpdate(
+            payload["latitude"] as double,
+            payload["longitude"] as double,
+            jsonEncode(payload),
+            payload["timestamp"] as String,
           );
         }
+
+        // Always attempt flush
+        await queue.flush((lat, lng, address, timestamp) async {
+          final decoded = jsonDecode(address);
+          await http.post(
+            Uri.parse("$_baseUrl/employee/location-enhanced"),
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer $token"
+            },
+            body: jsonEncode(decoded),
+          );
+        });
       } catch (e) {
-        print('❌ Background location error: $e');
+        print("❌ Background error: $e");
       }
     });
-  }
-
-  // Save location update to shared preferences
-  static Future<void> _saveLocationUpdate(
-    double lat,
-    double lng,
-    SharedPreferences prefs,
-  ) async {
-    final update = {
-      'latitude': lat,
-      'longitude': lng,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-
-    // Save latest location
-    await prefs.setString('latest_location', jsonEncode(update));
-
-    // Add to pending queue
-    final queueJson = prefs.getString('location_queue') ?? '[]';
-    final queue = List<Map<String, dynamic>>.from(jsonDecode(queueJson));
-    queue.add(update);
-
-    // Keep only last 100 updates
-    if (queue.length > 100) {
-      queue.removeRange(0, queue.length - 100);
-    }
-
-    await prefs.setString('location_queue', jsonEncode(queue));
-    print('📦 Saved to local queue (${queue.length} pending)');
-  }
-
-  // Get pending location updates from shared preferences
-  Future<List<Map<String, dynamic>>> getPendingUpdates() async {
-    final prefs = await SharedPreferences.getInstance();
-    final queueJson = prefs.getString('location_queue') ?? '[]';
-    return List<Map<String, dynamic>>.from(jsonDecode(queueJson));
-  }
-
-  // Clear processed updates
-  Future<void> clearPendingUpdates() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('location_queue', '[]');
   }
 }

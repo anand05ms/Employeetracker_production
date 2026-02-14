@@ -663,8 +663,16 @@ exports.checkOut = async (req, res) => {
 
 exports.updateLocation = async (req, res) => {
   try {
-    const employeeId = req.user.id;
-    const { latitude, longitude, address } = req.body;
+    const {
+      latitude,
+      longitude,
+      address,
+      speed,
+      altitude,
+      accuracy,
+      heading,
+      timestamp,
+    } = req.body;
 
     if (typeof latitude !== "number" || typeof longitude !== "number") {
       return res.status(400).json({
@@ -674,14 +682,19 @@ exports.updateLocation = async (req, res) => {
     }
 
     await Location.create({
-      employeeId,
+      employeeId: req.user.id,
       location: {
         type: "Point",
-        coordinates: [longitude, latitude], // GeoJSON order
+        coordinates: [longitude, latitude],
       },
       address: address || "Moving",
-      timestamp: new Date(),
+      speed: speed || 0,
+      altitude: altitude || 0,
+      accuracy: accuracy || 0,
+      heading: heading || 0,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
       status: "ACTIVE",
+      isInOffice: false,
     });
 
     res.json({ success: true });
@@ -692,28 +705,6 @@ exports.updateLocation = async (req, res) => {
       message: err.message,
     });
   }
-};
-
-/* ================== STATUS ================== */
-
-exports.getMyStatus = async (req, res) => {
-  const employeeId = req.user.id;
-  const today = new Date().toISOString().split("T")[0];
-
-  const attendance = await Attendance.findOne({
-    employeeId,
-    date: today,
-    checkOutTime: null,
-  });
-
-  res.json({
-    success: true,
-    data: {
-      attendance,
-      isCheckedIn: !!attendance,
-      hasReachedOffice: attendance?.status === "REACHED_OFFICE",
-    },
-  });
 };
 
 /* ================== HISTORY ================== */

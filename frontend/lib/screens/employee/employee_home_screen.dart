@@ -1204,6 +1204,7 @@
 //   }
 // }
 // lib/screens/employee/employee_home_screen.dart
+
 // lib/screens/employee/employee_home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -1216,8 +1217,8 @@ import '../../services/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../services/socket_service.dart';
-import '../../services/persistent_queue_service.dart'; // NEW - uses SQLite
-import '../../services/background_location_service.dart'; // NEW
+import '../../services/persistent_queue_service.dart';
+import '../../services/background_location_service.dart';
 import '../../models/attendance.dart';
 import '../auth/login_screen.dart';
 
@@ -1233,9 +1234,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
   final SocketService _socketService = SocketService();
-  final PersistentQueueService _queueService = PersistentQueueService(); // NEW
+  final PersistentQueueService _queueService = PersistentQueueService();
   final BackgroundLocationService _bgLocationService =
-      BackgroundLocationService(); // NEW
+      BackgroundLocationService();
 
   bool _isLoading = false;
   bool _isCheckedIn = false;
@@ -1247,9 +1248,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
   int? _distanceFromOffice;
 
   // Real-time tracking
-  StreamSubscription<Position>? _positionStreamSubscription;
   StreamSubscription<ConnectivityResult>? _connectivitySubscription;
   Timer? _queueFlushTimer;
+  Timer? _syncTimer;
   bool _isTracking = false;
 
   // Office location
@@ -1267,10 +1268,10 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _stopLocationTracking();
     _socketService.disconnect();
     _connectivitySubscription?.cancel();
     _queueFlushTimer?.cancel();
+    _syncTimer?.cancel();
     super.dispose();
   }
 
@@ -1283,14 +1284,16 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
       print('📱 App resumed → refreshing status');
       await _loadStatus();
       await _getCurrentLocation();
-      await _flushQueuedUpdates(); // Flush when app opens
+      await _flushQueuedUpdates();
+
+      // Sync background updates when app opens
+      await _syncBackgroundUpdates();
 
       if (_isCheckedIn && !_hasReachedOffice && !_socketService.isConnected) {
         _socketService.forceReconnect();
       }
     } else if (state == AppLifecycleState.paused) {
       print('📱 App paused → ensuring background tracking');
-      // Background service should continue running
     }
   }
 
@@ -1298,7 +1301,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
   Future<void> _initializeServices() async {
     // 1. Initialize persistent queue
     await _queueService.initialize();
-    print('📦 Queue initialized: ${_queueService.queueSize} pending updates');
+    final queueSize = await _queueService.queueSize;
+    print('📦 Queue initialized: $queueSize pending updates');
 
     // 2. Check location permission
     final hasPermission = await _checkLocationPermission();
@@ -1340,6 +1344,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
     if (isTracking) {
       print('🟢 Background tracking already running');
       setState(() => _isTracking = true);
+
+      // Start syncing background updates
+      _startPeriodicSync();
+
+      // Sync any pending updates immediately
+      await _syncBackgroundUpdates();
     }
   }
 
@@ -1365,7 +1375,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
         } catch (e) {
           failCount++;
           print('❌ Failed to send: $e');
-          throw e; // Re-throw to keep in queue
+          throw e;
         }
       });
 
@@ -1382,6 +1392,116 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
       print('📊 Flush complete: $successCount success, $failCount failed');
     } catch (e) {
       print('❌ Queue flush error: $e');
+    }
+  }
+
+  // 🔄 NEW: Periodic sync from background service
+  void _startPeriodicSync() {
+    _syncTimer?.cancel();
+
+    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+      await _syncBackgroundUpdates();
+    });
+
+    print('🔄 Started periodic background sync');
+  }
+
+  // 🔄 NEW: Sync background location updates from SharedPreferences
+
+  Future<void> _syncBackgroundUpdates() async {
+    print('\n🔄 ===== STARTING BACKGROUND SYNC =====');
+
+    try {
+      print('Step 1: Getting pending updates...');
+      final updates = await _bgLocationService.getPendingUpdates();
+
+      print('Step 2: Found ${updates.length} updates in SharedPreferences');
+
+      if (updates.isEmpty) {
+        print('✅ No updates to sync');
+        return;
+      }
+
+      print('📦 Processing ${updates.length} background updates');
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+
+      if (user == null) {
+        print('❌ ERROR: No user found!');
+        return;
+      }
+
+      print('Step 3: User: ${user.name} (ID: ${user.id})');
+
+      int synced = 0;
+      int failed = 0;
+
+      for (int i = 0; i < updates.length; i++) {
+        final update = updates[i];
+        final lat = update['latitude'] as double;
+        final lng = update['longitude'] as double;
+        final timestamp = update['timestamp'] as String;
+
+        print('\n--- Update ${i + 1}/${updates.length} ---');
+        print('📍 Lat: $lat, Lng: $lng');
+        print('⏰ Time: $timestamp');
+
+        try {
+          print('🌐 Calling _apiService.updateLocation...');
+
+          final response = await _apiService
+              .updateLocation(lat, lng, 'BG-Synced')
+              .timeout(const Duration(seconds: 10));
+
+          print('✅ API SUCCESS! Response: $response');
+
+          synced++;
+
+          // Check distance
+          final distance = _locationService.calculateDistance(
+            lat,
+            lng,
+            officeLat,
+            officeLng,
+          );
+
+          print(
+              '📏 Distance from office: ${distance.toInt()}m (threshold: $officeRadius)');
+
+          if (distance <= officeRadius && !_hasReachedOffice && mounted) {
+            print('🏢 REACHED OFFICE! Showing dialog...');
+            setState(() => _hasReachedOffice = true);
+            _showReachedOfficeDialog();
+          }
+        } catch (e, stackTrace) {
+          failed++;
+          print('❌ API FAILED: $e');
+          print('Stack: ${stackTrace.toString().substring(0, 200)}...');
+
+          // Add to persistent queue
+          await _queueService.addLocationUpdate(
+            lat,
+            lng,
+            'BG-Failed',
+            timestamp,
+          );
+          print('📦 Added to SQLite queue');
+        }
+      }
+
+      print('\nStep 4: Clearing SharedPreferences...');
+      await _bgLocationService.clearPendingUpdates();
+      print('✅ SharedPrefs cleared');
+
+      print('\n📊 === SYNC COMPLETE ===');
+      print('✅ Success: $synced');
+      print('❌ Failed: $failed');
+      print('📦 Total: ${updates.length}');
+      print('===========================\n');
+    } catch (e, stackTrace) {
+      print('❌ CRITICAL ERROR in _syncBackgroundUpdates: $e');
+      print('Stack trace: $stackTrace');
     }
   }
 
@@ -1422,9 +1542,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
     return true;
   }
 
-  // ✅ Check and request ALL location permissions (including background)
   Future<bool> _checkLocationPermission() async {
-    // First check basic location permission
     var status = await Permission.locationWhenInUse.status;
 
     if (status.isDenied) {
@@ -1440,20 +1558,16 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
       return false;
     }
 
-    // Check location service
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       _showLocationServiceDialog();
       return false;
     }
 
-    // Request background location permission (Android 10+)
-    // This is CRITICAL for background tracking
     if (await Permission.locationAlways.isDenied) {
       final result = await Permission.locationAlways.request();
       if (!result.isGranted) {
         _showBackgroundPermissionDialog();
-        // Continue anyway - can still track in foreground
       }
     }
 
@@ -1676,16 +1790,29 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
         _statusLoaded = true;
       });
 
-      // Sync tracking state
       if (_isCheckedIn && !_hasReachedOffice) {
         if (!_isTracking) {
-          await _startBackgroundTracking(); // Use background service
+          await _startBackgroundTracking();
         }
       } else {
         await _stopBackgroundTracking();
       }
     } catch (e) {
       print('Error loading status: $e');
+
+      if (e.toString().contains('Auth token missing')) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        await authProvider.logout();
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+        }
+        return;
+      }
+
       setState(() => _statusLoaded = true);
     }
   }
@@ -1718,7 +1845,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
     }
   }
 
-  // 🚀 START BACKGROUND TRACKING (production-ready)
   Future<void> _startBackgroundTracking() async {
     print('🟢 Starting BACKGROUND location tracking...');
 
@@ -1731,15 +1857,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
     }
 
     try {
-      // Start foreground service with notification
       await _bgLocationService.start(
         userId: user.id,
         userName: user.name,
-        onLocationUpdate: (lat, lng) async {
-          print('📍 BG Update: $lat, $lng');
-          await _handleBackgroundLocationUpdate(lat, lng, user);
-        },
       );
+
+      _startPeriodicSync();
 
       setState(() => _isTracking = true);
       print('✅ Background tracking started');
@@ -1748,107 +1871,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
     }
   }
 
-  // 📍 HANDLE BACKGROUND LOCATION UPDATE
-  Future<void> _handleBackgroundLocationUpdate(
-    double lat,
-    double lng,
-    user,
-  ) async {
-    try {
-      final distance = _locationService.calculateDistance(
-        lat,
-        lng,
-        officeLat,
-        officeLng,
-      );
-
-      final isInOffice = distance <= officeRadius;
-      final timestamp = DateTime.now().toIso8601String();
-
-      print('🏢 Distance: ${distance.toStringAsFixed(0)}m');
-
-      // Try to update backend
-      try {
-        final connectivity = await Connectivity().checkConnectivity();
-
-        if (connectivity == ConnectivityResult.none) {
-          throw Exception('No internet connection');
-        }
-
-        final response = await _apiService
-            .updateLocation(lat, lng, 'Auto-tracking')
-            .timeout(const Duration(seconds: 15));
-
-        print('✅ Backend updated successfully');
-
-        // Broadcast via Socket
-        if (_socketService.isConnected) {
-          _socketService.sendLocationUpdate({
-            'employeeId': user.id,
-            'employeeName': user.name,
-            'latitude': lat,
-            'longitude': lng,
-            'isInOffice': isInOffice,
-            'hasReachedOffice': response['data']?['hasReachedOffice'] ?? false,
-            'timestamp': timestamp,
-          });
-          print('📡 Socket.io sent');
-        }
-
-        // Update UI if in office
-        if (mounted && isInOffice && !_hasReachedOffice) {
-          setState(() {
-            _hasReachedOffice = true;
-          });
-          _showReachedOfficeDialog();
-        }
-      } catch (e) {
-        print('❌ Backend update failed: $e');
-
-        // ✅ ADD TO PERSISTENT QUEUE (SQLite)
-        await _queueService.addLocationUpdate(lat, lng, 'Queued', timestamp);
-        print('📦 Added to queue (${_queueService.queueSize} total)');
-      }
-
-      // Update UI
-      if (mounted) {
-        setState(() {
-          _currentPosition = Position(
-            latitude: lat,
-            longitude: lng,
-            timestamp: DateTime.now(),
-            accuracy: 10.0,
-            altitude: 0.0,
-            heading: 0.0,
-            speed: 0.0,
-            speedAccuracy: 0.0,
-            altitudeAccuracy: 0.0,
-            headingAccuracy: 0.0,
-          );
-          _distanceFromOffice = distance.round();
-          _estimatedTimeToOffice = _locationService.calculateETA(distance);
-        });
-      }
-    } catch (e) {
-      print('❌ Position update failed: $e');
-    }
-  }
-
   Future<void> _stopBackgroundTracking() async {
     await _bgLocationService.stop();
+    _syncTimer?.cancel();
+    _syncTimer = null;
     setState(() => _isTracking = false);
     print('🔴 BACKGROUND TRACKING STOPPED');
-  }
-
-  // ⚠️ Keep for foreground fallback (removed stream, use timer)
-  void _startLocationTracking() {
-    // This is now just a fallback - background service is primary
-    print('⚠️ Using foreground tracking (background service should be used)');
-  }
-
-  void _stopLocationTracking() {
-    _positionStreamSubscription?.cancel();
-    _positionStreamSubscription = null;
   }
 
   void _showReachedOfficeDialog() {
@@ -1930,7 +1958,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
         _showReachedOfficeDialog();
       } else {
         print('🚀 Starting background tracking...');
-        await _startBackgroundTracking(); // Use background service
+        await _startBackgroundTracking();
       }
 
       if (mounted) {
@@ -1988,7 +2016,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
         _isLoading = false;
       });
 
-      await _stopBackgroundTracking(); // Stop background service
+      await _stopBackgroundTracking();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2058,7 +2086,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
       appBar: AppBar(
         title: const Text('Employee Dashboard'),
         actions: [
-          // Network status + Queue size
           StreamBuilder<ConnectivityResult>(
             stream: Connectivity().onConnectivityChanged,
             builder: (context, snapshot) {
@@ -2122,8 +2149,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
               );
             },
           ),
-
-          // Tracking indicator
           if (_isTracking)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -2165,11 +2190,105 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          print('\n🧪 ===== DIAGNOSTIC TEST =====');
+
+          // 1. Check service status
+          final isRunning = await _bgLocationService.isRunning();
+          print('🔍 Service running: $isRunning');
+
+          // 2. Check SharedPreferences queue
+          final updates = await _bgLocationService.getPendingUpdates();
+          print('🔍 Pending updates in SharedPreferences: ${updates.length}');
+
+          if (updates.isNotEmpty) {
+            print('🔍 First update: ${updates.first}');
+            print('🔍 Last update: ${updates.last}');
+          }
+
+          // 3. Check SQLite queue
+          final queueSize = await _queueService.queueSize;
+          print('🔍 Queue size in SQLite: $queueSize');
+
+          // 4. Check backend status
+          try {
+            final status = await _apiService.getMyStatus();
+            print('🔍 Backend says isCheckedIn: ${status['isCheckedIn']}');
+            print(
+                '🔍 Backend says hasReachedOffice: ${status['hasReachedOffice']}');
+          } catch (e) {
+            print('❌ Backend status error: $e');
+          }
+
+          // 5. Try manual sync
+          print('\n🔄 Attempting manual sync...');
+          try {
+            await _syncBackgroundUpdates();
+            print('✅ Manual sync completed');
+          } catch (e) {
+            print('❌ Manual sync error: $e');
+          }
+
+          // 6. Check again
+          final updatesAfter = await _bgLocationService.getPendingUpdates();
+          print('🔍 Pending updates after sync: ${updatesAfter.length}');
+
+          print('🧪 ===== END TEST =====\n');
+
+          // Show dialog with results
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: Text('Debug Results'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Service Running: $isRunning'),
+                    SizedBox(height: 8),
+                    Text('SharedPrefs Updates: ${updates.length}'),
+                    SizedBox(height: 8),
+                    Text('SQLite Queue: $queueSize'),
+                    SizedBox(height: 8),
+                    Text('After Sync: ${updatesAfter.length}'),
+                    SizedBox(height: 16),
+                    Text('Check console for details',
+                        style: TextStyle(fontStyle: FontStyle.italic)),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Close'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    // Clear SharedPreferences queue
+                    await _bgLocationService.clearPendingUpdates();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cleared SharedPrefs queue')),
+                    );
+                  },
+                  child: Text('Clear Queue'),
+                ),
+              ],
+            ),
+          );
+        },
+        icon: Icon(Icons.bug_report),
+        label: Text('DEBUG'),
+      ),
       body: RefreshIndicator(
         onRefresh: () async {
           await _loadStatus();
           await _getCurrentLocation();
           await _flushQueuedUpdates();
+          await _syncBackgroundUpdates();
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -2177,9 +2296,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // [REST OF UI CODE STAYS THE SAME]
-              // Welcome card, Status card, Distance info, Action buttons, etc.
-
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -2202,10 +2318,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Status card with background tracking indicator
               Card(
                 color: _hasReachedOffice
                     ? Colors.green[50]
@@ -2288,11 +2401,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen>
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Rest of the UI (distance, buttons, etc.) stays the same...
-
               if (!_hasReachedOffice)
                 SizedBox(
                   height: 120,
