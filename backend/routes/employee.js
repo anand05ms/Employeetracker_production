@@ -13,7 +13,6 @@ const { protect, authorize } = require("../middleware/auth");
 // All routes are protected and employee-only
 router.use(protect);
 router.use(authorize("EMPLOYEE"));
-router.post("/location-enhanced", protect, updateEnhancedLocation);
 router.post("/check-in", checkIn);
 router.post("/check-out", checkOut);
 router.post("/location", updateLocation);
