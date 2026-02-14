@@ -719,3 +719,32 @@ exports.getMyAttendance = async (req, res) => {
     data: { attendance },
   });
 };
+/* ================== STATUS ================== */
+
+exports.getMyStatus = async (req, res) => {
+  try {
+    const employeeId = req.user.id;
+    const today = new Date().toISOString().split("T")[0];
+
+    const attendance = await Attendance.findOne({
+      employeeId,
+      date: today,
+      checkOutTime: null,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        attendance,
+        isCheckedIn: !!attendance,
+        hasReachedOffice: attendance?.status === "REACHED_OFFICE",
+      },
+    });
+  } catch (error) {
+    console.error("STATUS ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch status",
+    });
+  }
+};
