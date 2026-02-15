@@ -1421,8 +1421,9 @@ class ApiService {
   // ============================================
 
   /// Get my statistics
-  Future<Map<String, dynamic>> getMyStats({String period = 'today'}) async {
-    final url = Uri.parse('$baseUrl/stats/my-stats?period=$period');
+  /// Get my statistics
+  Future<Map<String, dynamic>> getMyStats() async {
+    final url = Uri.parse('$baseUrl/employee/stats');
     final token = await getToken();
 
     final response = await http.get(
