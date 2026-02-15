@@ -511,6 +511,7 @@
 //     });
 //   }
 // };
+
 const Location = require("../models/Location");
 const Attendance = require("../models/Attendance");
 
@@ -529,6 +530,8 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
+const todayString = () => new Date().toISOString().split("T")[0];
+
 /* ================== CHECK IN ================== */
 
 exports.checkIn = async (req, res) => {
@@ -543,7 +546,7 @@ exports.checkIn = async (req, res) => {
     }
 
     const employeeId = req.user.id;
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayString();
 
     let attendance = await Attendance.findOne({ employeeId, date: today });
 
@@ -553,7 +556,7 @@ exports.checkIn = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "You are already checked in",
+        message: "Already checked in",
       });
     }
 
@@ -569,7 +572,6 @@ exports.checkIn = async (req, res) => {
     );
 
     const isInOffice = distance <= officeRadius;
-    const status = isInOffice ? "REACHED_OFFICE" : "CHECKED_IN";
 
     if (!attendance) {
       attendance = new Attendance({
@@ -580,7 +582,7 @@ exports.checkIn = async (req, res) => {
 
     attendance.checkInTime = new Date();
     attendance.checkInAddress = address || "Unknown";
-    attendance.status = status;
+    attendance.status = isInOffice ? "REACHED_OFFICE" : "CHECKED_IN";
     attendance.distanceFromOffice = Math.round(distance);
 
     attendance.checkInLocation = {
@@ -598,17 +600,11 @@ exports.checkIn = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Checked in successfully",
-      data: {
-        hasReachedOffice: isInOffice,
-        attendance,
-      },
+      data: attendance,
     });
   } catch (e) {
     console.error("CHECK-IN ERROR:", e);
-    res.status(500).json({
-      success: false,
-      message: "Check-in failed",
-    });
+    res.status(500).json({ success: false, message: "Check-in failed" });
   }
 };
 
@@ -619,7 +615,7 @@ exports.checkOut = async (req, res) => {
     const { latitude, longitude, address } = req.body;
 
     const employeeId = req.user.id;
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayString();
 
     const attendance = await Attendance.findOne({
       employeeId,
@@ -635,11 +631,11 @@ exports.checkOut = async (req, res) => {
     }
 
     const checkOutTime = new Date();
-    const hours =
-      (checkOutTime - new Date(attendance.checkInTime)) / (1000 * 60 * 60);
 
     attendance.checkOutTime = checkOutTime;
-    attendance.totalHours = Number(hours.toFixed(2));
+    attendance.totalHours =
+      (checkOutTime - new Date(attendance.checkInTime)) / (1000 * 60 * 60);
+
     attendance.checkOutAddress = address || "Unknown";
     attendance.status = "CHECKED_OUT";
 
@@ -652,54 +648,11 @@ exports.checkOut = async (req, res) => {
     });
   } catch (e) {
     console.error("CHECK-OUT ERROR:", e);
-    res.status(500).json({
-      success: false,
-      message: "Check-out failed",
-    });
-  }
-};
-exports.updateLocationEnhanced = async (req, res) => {
-  try {
-    const {
-      latitude,
-      longitude,
-      address,
-      speed,
-      altitude,
-      accuracy,
-      heading,
-      timestamp,
-    } = req.body;
-
-    if (!latitude || !longitude) {
-      return res.status(400).json({ message: "Invalid coordinates" });
-    }
-
-    const date = new Date().toISOString().split("T")[0];
-
-    await Location.create({
-      employeeId: req.user.id,
-      location: {
-        type: "Point",
-        coordinates: [longitude, latitude],
-      },
-      address,
-      speed: speed || 0,
-      altitude: altitude || 0,
-      accuracy: accuracy || 0,
-      heading: heading || 0,
-      timestamp: timestamp ? new Date(timestamp) : new Date(),
-      date,
-    });
-
-    res.json({ success: true });
-  } catch (e) {
-    console.error("Enhanced location error:", e);
-    res.status(500).json({ message: "Failed to save location" });
+    res.status(500).json({ success: false, message: "Check-out failed" });
   }
 };
 
-/* ================== UPDATE LOCATION (🔥 FIXED) ================== */
+/* ================== UPDATE LOCATION (ENHANCED) ================== */
 
 exports.updateLocation = async (req, res) => {
   try {
@@ -707,10 +660,10 @@ exports.updateLocation = async (req, res) => {
       latitude,
       longitude,
       address,
-      speed,
-      altitude,
-      accuracy,
-      heading,
+      speed = 0,
+      altitude = 0,
+      accuracy = 0,
+      heading = 0,
       timestamp,
     } = req.body;
 
@@ -721,54 +674,37 @@ exports.updateLocation = async (req, res) => {
       });
     }
 
+    const today = todayString();
+
     await Location.create({
       employeeId: req.user.id,
+      date: today,
       location: {
         type: "Point",
         coordinates: [longitude, latitude],
       },
       address: address || "Moving",
-      speed: speed || 0,
-      altitude: altitude || 0,
-      accuracy: accuracy || 0,
-      heading: heading || 0,
+      speed,
+      altitude,
+      accuracy,
+      heading,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
-      status: "ACTIVE",
-      isInOffice: false,
     });
 
     res.json({ success: true });
   } catch (err) {
     console.error("UPDATE LOCATION ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
-/* ================== HISTORY ================== */
-
-exports.getMyAttendance = async (req, res) => {
-  const attendance = await Attendance.find({
-    employeeId: req.user.id,
-  }).sort({ date: -1 });
-
-  res.json({
-    success: true,
-    data: { attendance },
-  });
-};
 /* ================== STATUS ================== */
 
 exports.getMyStatus = async (req, res) => {
   try {
-    const employeeId = req.user.id;
-    const today = new Date().toISOString().split("T")[0];
-
     const attendance = await Attendance.findOne({
-      employeeId,
-      date: today,
+      employeeId: req.user.id,
+      date: todayString(),
       checkOutTime: null,
     });
 
@@ -781,16 +717,18 @@ exports.getMyStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("STATUS ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch status",
     });
   }
 };
+
+/* ================== STATS ================== */
+
 exports.getMyStats = async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayString();
 
     const locations = await Location.find({
       employeeId: req.user.id,
@@ -815,28 +753,27 @@ exports.getMyStats = async (req, res) => {
       const prev = locations[i - 1];
       const curr = locations[i];
 
-      const dist = calculateDistance(
+      totalDistance += calculateDistance(
         prev.location.coordinates[1],
         prev.location.coordinates[0],
         curr.location.coordinates[1],
         curr.location.coordinates[0],
       );
 
-      totalDistance += dist;
       totalSpeed += curr.speed || 0;
       if (curr.speed > maxSpeed) maxSpeed = curr.speed;
     }
 
-    const avgSpeed = totalSpeed / locations.length;
+    const duration =
+      (new Date(locations[locations.length - 1].timestamp) -
+        new Date(locations[0].timestamp)) /
+      60000;
 
     res.json({
       distance: totalDistance / 1000,
       visits: 0,
-      duration:
-        (new Date(locations[locations.length - 1].timestamp) -
-          new Date(locations[0].timestamp)) /
-        60000,
-      avgSpeed,
+      duration: Math.round(duration),
+      avgSpeed: totalSpeed / locations.length,
       maxSpeed,
     });
   } catch (e) {
@@ -844,9 +781,12 @@ exports.getMyStats = async (req, res) => {
     res.status(500).json({ message: "Stats error" });
   }
 };
+
+/* ================== TIMELINE ================== */
+
 exports.getTodayTimeline = async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayString();
 
     const locations = await Location.find({
       employeeId: req.user.id,
@@ -859,14 +799,11 @@ exports.getTodayTimeline = async (req, res) => {
       time: new Date(loc.timestamp).toLocaleTimeString(),
       title: loc.address || "Location Update",
       type: loc.speed > 5 ? "moving" : "visit",
-      data: {
-        speed: loc.speed,
-      },
+      data: { speed: loc.speed },
     }));
 
     res.json({ timeline });
   } catch (e) {
-    console.error("Timeline error:", e);
     res.status(500).json({ message: "Timeline error" });
   }
 };
