@@ -212,7 +212,6 @@ const cors = require("cors");
 const os = require("os");
 const connectDB = require("./config/db");
 const User = require("./models/User");
-const statsRoutes = require("./routes/stats");
 
 // Initialize express app
 const app = express();
