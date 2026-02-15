@@ -212,6 +212,7 @@ const cors = require("cors");
 const os = require("os");
 const connectDB = require("./config/db");
 const User = require("./models/User");
+const statsRoutes = require("./routes/stats");
 
 // Initialize express app
 const app = express();
@@ -312,6 +313,8 @@ console.log("🔍 Loading routes...");
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/employee", require("./routes/employee"));
 app.use("/api/admin", require("./routes/admin"));
+app.use("/api/stats", statsRoutes);
+
 console.log("✅ All routes loaded!");
 
 // Root route

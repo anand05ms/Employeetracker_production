@@ -829,6 +829,9 @@ class ApiService {
 
     final data = jsonDecode(response.body);
     await saveToken(data['data']['token']);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('token', data['data']['token']);
+
     return data;
   }
 
@@ -847,6 +850,8 @@ class ApiService {
 
     if (data['data']?['token'] != null) {
       await saveToken(data['data']['token']);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', data['data']['token']);
     }
 
     return data;
@@ -1130,7 +1135,7 @@ class ApiService {
 
   /// Get all contacts assigned to current employee
   Future<List<dynamic>> getMyContacts() async {
-    final url = Uri.parse('$baseUrl/api/contacts/my-contacts');
+    final url = Uri.parse('$baseUrl/contacts/my-contacts');
     final token = await getToken();
 
     final response = await http.get(
@@ -1172,7 +1177,7 @@ class ApiService {
     double? longitude,
     String? category,
   }) async {
-    final url = Uri.parse('$baseUrl/api/contacts/add');
+    final url = Uri.parse('$baseUrl/contacts/add');
     final token = await getToken();
 
     final response = await http.post(
@@ -1202,7 +1207,7 @@ class ApiService {
 
   /// Get contact details
   Future<Map<String, dynamic>> getContact(String contactId) async {
-    final url = Uri.parse('$baseUrl/api/contacts/$contactId');
+    final url = Uri.parse('$baseUrl/contacts/$contactId');
     final token = await getToken();
 
     final response = await http.get(
@@ -1231,7 +1236,7 @@ class ApiService {
     required String address,
     String? selfieUrl,
   }) async {
-    final url = Uri.parse('$baseUrl/api/visits/check-in');
+    final url = Uri.parse('$baseUrl/visits/check-in');
     final token = await getToken();
 
     final response = await http.post(
@@ -1266,7 +1271,7 @@ class ApiService {
     String? remarks,
     String? nextVisitDate,
   }) async {
-    final url = Uri.parse('$baseUrl/api/visits/check-out');
+    final url = Uri.parse('$baseUrl/visits/check-out');
     final token = await getToken();
 
     final response = await http.post(
@@ -1298,7 +1303,7 @@ class ApiService {
     required String visitId,
     required String photoUrl,
   }) async {
-    final url = Uri.parse('$baseUrl/api/visits/$visitId/photo');
+    final url = Uri.parse('$baseUrl/visits/$visitId/photo');
     final token = await getToken();
 
     final response = await http.post(
@@ -1325,7 +1330,7 @@ class ApiService {
     String? textNotes,
     String? audioNoteUrl,
   }) async {
-    final url = Uri.parse('$baseUrl/api/visits/$visitId/notes');
+    final url = Uri.parse('$baseUrl/visits/$visitId/notes');
     final token = await getToken();
 
     final response = await http.post(
@@ -1349,7 +1354,7 @@ class ApiService {
 
   /// Get my visits (today/this week/this month)
   Future<List<dynamic>> getMyVisits({String period = 'today'}) async {
-    final url = Uri.parse('$baseUrl/api/visits/my-visits?period=$period');
+    final url = Uri.parse('$baseUrl/visits/my-visits?period=$period');
     final token = await getToken();
 
     final response = await http.get(
@@ -1373,7 +1378,7 @@ class ApiService {
 
   /// Get all employees with their latest location (Admin)
   Future<List<dynamic>> getLiveEmployeeLocations() async {
-    final url = Uri.parse('$baseUrl/api/admin/live-locations');
+    final url = Uri.parse('$baseUrl/admin/live-locations');
     final token = await getToken();
 
     final response = await http.get(
@@ -1394,7 +1399,7 @@ class ApiService {
   /// Get specific employee's live location (Admin)
   Future<Map<String, dynamic>> getEmployeeLiveLocation(
       String employeeId) async {
-    final url = Uri.parse('$baseUrl/api/admin/live-location/$employeeId');
+    final url = Uri.parse('$baseUrl/admin/live-location/$employeeId');
     final token = await getToken();
 
     final response = await http.get(
@@ -1417,7 +1422,7 @@ class ApiService {
 
   /// Get my statistics
   Future<Map<String, dynamic>> getMyStats({String period = 'today'}) async {
-    final url = Uri.parse('$baseUrl/api/stats/my-stats?period=$period');
+    final url = Uri.parse('$baseUrl/stats/my-stats?period=$period');
     final token = await getToken();
 
     final response = await http.get(
@@ -1441,7 +1446,7 @@ class ApiService {
     required String endDate,
   }) async {
     final url = Uri.parse(
-        '$baseUrl/api/admin/report/$employeeId?start=$startDate&end=$endDate');
+        '$baseUrl/admin/report/$employeeId?start=$startDate&end=$endDate');
     final token = await getToken();
 
     final response = await http.get(
