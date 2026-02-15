@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_provider.dart';
-import '../employee/employee_home_screen.dart';
+import '../employee/enhanced_employee_home_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -53,7 +53,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (success && mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const EmployeeHomeScreen()),
+        MaterialPageRoute(
+            builder: (_) => EnhancedEmployeeHomeScreen(
+                  userId: authProvider.currentUser!.id,
+                  userName: authProvider.currentUser!.name,
+                )),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

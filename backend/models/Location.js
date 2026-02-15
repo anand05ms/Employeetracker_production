@@ -132,6 +132,80 @@
 // // Query performance index
 // locationSchema.index({ employeeId: 1, timestamp: -1 });
 
+// // module.exports = mongoose.model("Location", locationSchema);
+
+// const mongoose = require("mongoose");
+
+// const locationSchema = new mongoose.Schema({
+//   employeeId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: "User",
+//     required: true,
+//     index: true,
+//   },
+
+//   location: {
+//     type: {
+//       type: String,
+//       enum: ["Point"],
+//       required: true,
+//     },
+//     coordinates: {
+//       type: [Number], // [lng, lat]
+//       required: true,
+//     },
+//   },
+
+//   address: {
+//     type: String,
+//     default: "Unknown",
+//   },
+
+//   speed: {
+//     type: Number,
+//     default: 0,
+//   },
+
+//   altitude: {
+//     type: Number,
+//     default: 0,
+//   },
+
+//   accuracy: {
+//     type: Number,
+//     default: 0,
+//   },
+
+//   heading: {
+//     type: Number,
+//     default: 0,
+//   },
+
+//   status: {
+//     type: String,
+//     default: "ACTIVE",
+//   },
+
+//   isInOffice: {
+//     type: Boolean,
+//     default: false,
+//   },
+
+//   timestamp: {
+//     type: Date,
+//     required: true,
+//     index: true,
+//   },
+
+//   createdAt: {
+//     type: Date,
+//     default: Date.now,
+//     expires: 60 * 60 * 24 * 7, // auto delete after 7 days
+//   },
+// });
+
+// locationSchema.index({ location: "2dsphere" });
+
 // module.exports = mongoose.model("Location", locationSchema);
 
 const mongoose = require("mongoose");
@@ -141,69 +215,32 @@ const locationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
-    index: true,
   },
 
   location: {
-    type: {
-      type: String,
-      enum: ["Point"],
-      required: true,
-    },
-    coordinates: {
-      type: [Number], // [lng, lat]
-      required: true,
-    },
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], required: true },
   },
 
-  address: {
-    type: String,
-    default: "Unknown",
-  },
-
-  speed: {
-    type: Number,
-    default: 0,
-  },
-
-  altitude: {
-    type: Number,
-    default: 0,
-  },
-
-  accuracy: {
-    type: Number,
-    default: 0,
-  },
-
-  heading: {
-    type: Number,
-    default: 0,
-  },
-
-  status: {
-    type: String,
-    default: "ACTIVE",
-  },
-
-  isInOffice: {
-    type: Boolean,
-    default: false,
-  },
+  address: String,
+  speed: { type: Number, default: 0 },
+  altitude: { type: Number, default: 0 },
+  accuracy: { type: Number, default: 0 },
+  heading: { type: Number, default: 0 },
 
   timestamp: {
     type: Date,
-    required: true,
-    index: true,
+    default: Date.now,
   },
 
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    expires: 60 * 60 * 24 * 7, // auto delete after 7 days
+  // 🔥 IMPORTANT (needed for stats + timeline)
+  date: {
+    type: String, // "YYYY-MM-DD"
   },
 });
 
+// Indexes (VERY IMPORTANT for performance)
 locationSchema.index({ location: "2dsphere" });
+locationSchema.index({ employeeId: 1, timestamp: -1 });
 
 module.exports = mongoose.model("Location", locationSchema);

@@ -241,8 +241,191 @@
 //     }
 //   }
 // }
-
 // lib/services/background_location_service.dart
+
+// import 'dart:async';
+// import 'dart:convert';
+// import 'package:flutter_background_service/flutter_background_service.dart';
+// import 'package:flutter_background_service_android/flutter_background_service_android.dart';
+// import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// import 'package:geolocator/geolocator.dart';
+// import 'package:http/http.dart' as http;
+// import 'package:shared_preferences/shared_preferences.dart';
+// import 'persistent_queue_service.dart';
+
+// class BackgroundLocationService {
+//   static const String _baseUrl = "https://emptracker-backend.onrender.com/api";
+//   static const int _interval = 10;
+//   static const String _channelId = "tracking_channel";
+//   static const int _notificationId = 999;
+
+//   final FlutterBackgroundService _service = FlutterBackgroundService();
+
+//   // ============================================================
+//   // PUBLIC METHODS
+//   // ============================================================
+
+//   Future<void> start({
+//     required String userId,
+//     required String userName,
+//   }) async {
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setBool('is_tracking', true);
+
+//     await _configureService();
+
+//     await _service.startService();
+//     print("🟢 Background tracking started");
+//   }
+
+//   Future<void> stop() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setBool('is_tracking', false);
+//     _service.invoke("stop");
+//     print("🔴 Background tracking stopped");
+//   }
+
+//   Future<bool> isRunning() async {
+//     return await _service.isRunning();
+//   }
+
+//   Future<int> getPendingUpdates() async {
+//     final queue = PersistentQueueService();
+//     return await queue.size;
+//   }
+
+//   Future<void> clearPendingUpdates() async {
+//     final queue = PersistentQueueService();
+//     await queue.clearQueue();
+//   }
+
+//   // ============================================================
+//   // CONFIGURE SERVICE
+//   // ============================================================
+
+//   Future<void> _configureService() async {
+//     const AndroidNotificationChannel channel = AndroidNotificationChannel(
+//       _channelId,
+//       "Location Tracking",
+//       description: "Background location tracking",
+//       importance: Importance.low,
+//     );
+
+//     final FlutterLocalNotificationsPlugin notifications =
+//         FlutterLocalNotificationsPlugin();
+
+//     await notifications
+//         .resolvePlatformSpecificImplementation<
+//             AndroidFlutterLocalNotificationsPlugin>()
+//         ?.createNotificationChannel(channel);
+
+//     await _service.configure(
+//       androidConfiguration: AndroidConfiguration(
+//         onStart: onStart,
+//         autoStart: false,
+//         isForegroundMode: true,
+//         notificationChannelId: _channelId,
+//         initialNotificationTitle: "Tracking Active",
+//         initialNotificationContent: "Location tracking running",
+//         foregroundServiceNotificationId: _notificationId,
+//       ),
+//       iosConfiguration: IosConfiguration(
+//         autoStart: false,
+//         onForeground: onStart,
+//       ),
+//     );
+//   }
+
+//   // ============================================================
+//   // BACKGROUND ENTRY POINT
+//   // ============================================================
+
+//   @pragma('vm:entry-point')
+//   static void onStart(ServiceInstance service) async {
+//     final queue = PersistentQueueService();
+//     await queue.database;
+
+//     final prefs = await SharedPreferences.getInstance();
+
+//     if (service is AndroidServiceInstance) {
+//       service.on('stop').listen((event) {
+//         service.stopSelf();
+//       });
+
+//       service.setAsForegroundService();
+//     }
+
+//     Timer.periodic(const Duration(seconds: _interval), (timer) async {
+//       final isTracking = prefs.getBool('is_tracking') ?? false;
+//       if (!isTracking) {
+//         timer.cancel();
+//         return;
+//       }
+
+//       try {
+//         final position = await Geolocator.getCurrentPosition(
+//           desiredAccuracy: LocationAccuracy.high,
+//         );
+
+//         final token = prefs.getString('token');
+//         if (token == null) {
+//           print("❌ No token found");
+//           return;
+//         }
+
+//         final payload = jsonEncode({
+//           "latitude": position.latitude,
+//           "longitude": position.longitude,
+//           "speed": position.speed * 3.6,
+//           "altitude": position.altitude,
+//           "accuracy": position.accuracy,
+//           "heading": position.heading,
+//           "timestamp": DateTime.now().toIso8601String(),
+//           "address": "Background",
+//         });
+
+//         // 1️⃣ Try direct send
+//         try {
+//           final res = await http.post(
+//             Uri.parse("$_baseUrl/employee/location"),
+//             headers: {
+//               "Content-Type": "application/json",
+//               "Authorization": "Bearer $token"
+//             },
+//             body: payload,
+//           );
+
+//           if (res.statusCode != 200 && res.statusCode != 201) {
+//             throw Exception("Server rejected");
+//           }
+
+//           print("✅ Sent location to server");
+//         } catch (_) {
+//           print("⚠️ Offline → saving to SQLite queue");
+//           await queue.add(payload);
+//         }
+
+//         // 2️⃣ Always attempt flush
+//         await queue.flush((payload) async {
+//           final res = await http.post(
+//             Uri.parse("$_baseUrl/employee/location"),
+//             headers: {
+//               "Content-Type": "application/json",
+//               "Authorization": "Bearer $token"
+//             },
+//             body: payload,
+//           );
+
+//           if (res.statusCode != 200 && res.statusCode != 201) {
+//             throw Exception("Flush failed");
+//           }
+//         });
+//       } catch (e) {
+//         print("❌ Background error: $e");
+//       }
+//     });
+//   }
+// }
 
 import 'dart:async';
 import 'dart:convert';
@@ -259,30 +442,29 @@ class BackgroundLocationService {
   static const int _interval = 10;
   static const String _channelId = "tracking_channel";
   static const int _notificationId = 999;
+  static Map<String, dynamic>? _latestLocation;
 
   final FlutterBackgroundService _service = FlutterBackgroundService();
 
-  // ============================================================
-  // PUBLIC METHODS (USED BY UI)
-  // ============================================================
+  // ================= PUBLIC =================
 
   Future<void> start({
     required String userId,
     required String userName,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', userId);
     await prefs.setBool('is_tracking', true);
 
     await _configureService();
-
     await _service.startService();
+
     print("🟢 Background tracking started");
   }
 
   Future<void> stop() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_tracking', false);
+
     _service.invoke("stop");
     print("🔴 Background tracking stopped");
   }
@@ -293,18 +475,18 @@ class BackgroundLocationService {
 
   Future<List<Map<String, dynamic>>> getPendingUpdates() async {
     final queue = PersistentQueueService();
-    await queue.initialize();
-    return [];
+    return await queue.getAll();
   }
 
   Future<void> clearPendingUpdates() async {
     final queue = PersistentQueueService();
-    await queue.clearQueue();
+    await queue.clearQueue(); // ✅ Already correct
   }
 
-  // ============================================================
-  // SERVICE CONFIG
-  // ============================================================
+  Future<Map<String, dynamic>?> getLatestLocation() async {
+    return _latestLocation;
+  }
+  // ================= CONFIG =================
 
   Future<void> _configureService() async {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -339,14 +521,12 @@ class BackgroundLocationService {
     );
   }
 
-  // ============================================================
-  // BACKGROUND ENTRY POINT
-  // ============================================================
+  // ================= BACKGROUND ENTRY =================
 
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) async {
     final queue = PersistentQueueService();
-    await queue.initialize();
+    await queue.initialize(); // ✅ FIXED (was queue.database)
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -360,6 +540,7 @@ class BackgroundLocationService {
 
     Timer.periodic(const Duration(seconds: _interval), (timer) async {
       final isTracking = prefs.getBool('is_tracking') ?? false;
+
       if (!isTracking) {
         timer.cancel();
         return;
@@ -372,11 +553,11 @@ class BackgroundLocationService {
 
         final token = prefs.getString('token');
         if (token == null) {
-          print("❌ No token available");
+          print("❌ No token found");
           return;
         }
 
-        final payload = {
+        final payload = jsonEncode({
           "latitude": position.latitude,
           "longitude": position.longitude,
           "speed": position.speed * 3.6,
@@ -385,17 +566,19 @@ class BackgroundLocationService {
           "heading": position.heading,
           "timestamp": DateTime.now().toIso8601String(),
           "address": "Background",
-        };
+        });
+        _latestLocation = jsonDecode(payload);
 
-        // Try direct send
+        // ========= TRY DIRECT SEND =========
+
         try {
           final res = await http.post(
-            Uri.parse("$_baseUrl/employee/location-enhanced"),
+            Uri.parse("$_baseUrl/employee/location"),
             headers: {
               "Content-Type": "application/json",
               "Authorization": "Bearer $token"
             },
-            body: jsonEncode(payload),
+            body: payload,
           );
 
           if (res.statusCode != 200 && res.statusCode != 201) {
@@ -403,27 +586,26 @@ class BackgroundLocationService {
           }
 
           print("✅ Sent location to server");
-        } catch (_) {
-          print("⚠️ Offline, saving to queue");
-          await queue.addLocationUpdate(
-            payload["latitude"] as double,
-            payload["longitude"] as double,
-            jsonEncode(payload),
-            payload["timestamp"] as String,
-          );
+        } catch (e) {
+          print("⚠️ Offline → saving to SQLite queue");
+          await queue.addPayload(payload); // ✅ FIXED
         }
 
-        // Always attempt flush
-        await queue.flush((lat, lng, address, timestamp) async {
-          final decoded = jsonDecode(address);
-          await http.post(
-            Uri.parse("$_baseUrl/employee/location-enhanced"),
+        // ========= FLUSH QUEUE =========
+
+        await queue.flush((queuedPayload) async {
+          final res = await http.post(
+            Uri.parse("$_baseUrl/employee/location"),
             headers: {
               "Content-Type": "application/json",
               "Authorization": "Bearer $token"
             },
-            body: jsonEncode(decoded),
+            body: queuedPayload,
           );
+
+          if (res.statusCode != 200 && res.statusCode != 201) {
+            throw Exception("Flush failed");
+          }
         });
       } catch (e) {
         print("❌ Background error: $e");

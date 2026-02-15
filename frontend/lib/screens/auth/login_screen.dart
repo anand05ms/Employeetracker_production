@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_provider.dart';
-import '../employee/employee_home_screen.dart';
+import '../employee/enhanced_employee_home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 import 'register_screen.dart';
 
@@ -50,9 +50,12 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         } else {
           Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const EmployeeHomeScreen()),
-          );
+              context,
+              MaterialPageRoute(
+                  builder: (_) => EnhancedEmployeeHomeScreen(
+                        userId: authProvider.currentUser!.id,
+                        userName: authProvider.currentUser!.name,
+                      )));
         }
       } else if (mounted) {
         _showError(authProvider.error ?? "Invalid email or password");

@@ -870,11 +870,11 @@ class ApiService {
   // EMPLOYEE
   // ============================================================
 
-  Future<Map<String, dynamic>> checkIn(
-    double latitude,
-    double longitude,
-    String address,
-  ) async {
+  Future<Map<String, dynamic>> checkIn({
+    required double latitude,
+    required double longitude,
+    required String address,
+  }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/employee/check-in'),
       headers: await _headers(),
@@ -892,11 +892,11 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
-  Future<Map<String, dynamic>> checkOut(
-    double lat,
-    double lng,
-    String address,
-  ) async {
+  Future<Map<String, dynamic>> checkOut({
+    required double lat,
+    required double lng,
+    required String address,
+  }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/employee/check-out'),
       headers: await _headers(),
@@ -931,6 +931,19 @@ class ApiService {
   Future<Map<String, dynamic>> getMyStatus() async {
     final response = await http.get(
       Uri.parse('$baseUrl/employee/status'),
+      headers: await _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(jsonDecode(response.body)['message']);
+    }
+
+    return jsonDecode(response.body)['data'];
+  }
+
+  Future<Map<String, dynamic>> getTodayTimeline() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/employee/timeline'),
       headers: await _headers(),
     );
 
@@ -1090,6 +1103,27 @@ class ApiService {
     }
   }
 
+  Future<void> sendRawLocationPayload(String payload) async {
+    final token = await getToken();
+
+    if (token == null) {
+      throw Exception("No auth token");
+    }
+
+    final response = await http.post(
+      Uri.parse("$baseUrl/employee/location"),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token",
+      },
+      body: payload,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception("Failed to send location");
+    }
+  }
+
   // ============================================
   // CONTACT MANAGEMENT
   // ============================================
@@ -1111,6 +1145,19 @@ class ApiService {
       return data['contacts'] ?? [];
     } else {
       throw Exception('Failed to get contacts: ${response.body}');
+    }
+  }
+
+  Future<Map<String, dynamic>> getAttendanceStatus() async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/employee/status"),
+      headers: await _headers(), // ✅ CORRECT
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data'];
+    } else {
+      throw Exception("Failed to fetch attendance status");
     }
   }
 

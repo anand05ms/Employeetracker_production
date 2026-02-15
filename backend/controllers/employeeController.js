@@ -658,6 +658,46 @@ exports.checkOut = async (req, res) => {
     });
   }
 };
+exports.updateLocationEnhanced = async (req, res) => {
+  try {
+    const {
+      latitude,
+      longitude,
+      address,
+      speed,
+      altitude,
+      accuracy,
+      heading,
+      timestamp,
+    } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ message: "Invalid coordinates" });
+    }
+
+    const date = new Date().toISOString().split("T")[0];
+
+    await Location.create({
+      employeeId: req.user.id,
+      location: {
+        type: "Point",
+        coordinates: [longitude, latitude],
+      },
+      address,
+      speed: speed || 0,
+      altitude: altitude || 0,
+      accuracy: accuracy || 0,
+      heading: heading || 0,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      date,
+    });
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Enhanced location error:", e);
+    res.status(500).json({ message: "Failed to save location" });
+  }
+};
 
 /* ================== UPDATE LOCATION (🔥 FIXED) ================== */
 
@@ -746,5 +786,87 @@ exports.getMyStatus = async (req, res) => {
       success: false,
       message: "Failed to fetch status",
     });
+  }
+};
+exports.getMyStats = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    const locations = await Location.find({
+      employeeId: req.user.id,
+      date: today,
+    }).sort({ timestamp: 1 });
+
+    if (locations.length < 2) {
+      return res.json({
+        distance: 0,
+        visits: 0,
+        duration: 0,
+        avgSpeed: 0,
+        maxSpeed: 0,
+      });
+    }
+
+    let totalDistance = 0;
+    let totalSpeed = 0;
+    let maxSpeed = 0;
+
+    for (let i = 1; i < locations.length; i++) {
+      const prev = locations[i - 1];
+      const curr = locations[i];
+
+      const dist = calculateDistance(
+        prev.location.coordinates[1],
+        prev.location.coordinates[0],
+        curr.location.coordinates[1],
+        curr.location.coordinates[0],
+      );
+
+      totalDistance += dist;
+      totalSpeed += curr.speed || 0;
+      if (curr.speed > maxSpeed) maxSpeed = curr.speed;
+    }
+
+    const avgSpeed = totalSpeed / locations.length;
+
+    res.json({
+      distance: totalDistance / 1000,
+      visits: 0,
+      duration:
+        (new Date(locations[locations.length - 1].timestamp) -
+          new Date(locations[0].timestamp)) /
+        60000,
+      avgSpeed,
+      maxSpeed,
+    });
+  } catch (e) {
+    console.error("Stats error:", e);
+    res.status(500).json({ message: "Stats error" });
+  }
+};
+exports.getTodayTimeline = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    const locations = await Location.find({
+      employeeId: req.user.id,
+      date: today,
+    })
+      .sort({ timestamp: -1 })
+      .limit(50);
+
+    const timeline = locations.map((loc) => ({
+      time: new Date(loc.timestamp).toLocaleTimeString(),
+      title: loc.address || "Location Update",
+      type: loc.speed > 5 ? "moving" : "visit",
+      data: {
+        speed: loc.speed,
+      },
+    }));
+
+    res.json({ timeline });
+  } catch (e) {
+    console.error("Timeline error:", e);
+    res.status(500).json({ message: "Timeline error" });
   }
 };
