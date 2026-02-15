@@ -54,11 +54,6 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
   String _currentAddress = 'Fetching location...';
   double _currentSpeed = 0.0;
 
-  // Office location (customize this)
-  final double _officeLatitude = 9.9252;
-  final double _officeLongitude = 78.1198;
-  final double _officeRadius = 500.0; // 500 meters
-
   // Stats
   double _todayDistance = 0.0;
   int _todayVisits = 0;
@@ -304,9 +299,13 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
   // ============================================
 
   Future<void> _handleCheckIn() async {
+    final allowed = await _ensureLocationEnabled();
+    if (!allowed) return;
+
+    await _getCurrentLocation();
+
     if (_currentPosition == null) {
-      _showSnackBar('Getting location...', Colors.orange);
-      await _getCurrentLocation();
+      _showSnackBar('Unable to get location', Colors.red);
       return;
     }
 
@@ -326,12 +325,10 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
 
       _showSnackBar('✅ Checked in successfully', AppTheme.success);
 
-      // Start background tracking
       await _startBackgroundTracking();
 
-      // Refresh stats
-      _fetchTodayStats();
-      _fetchTodayTimeline();
+      await _fetchTodayStats();
+      await _fetchTodayTimeline();
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('❌ Check-in failed: $e', AppTheme.error);
@@ -339,8 +336,14 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
   }
 
   Future<void> _handleCheckOut() async {
+    final allowed = await _ensureLocationEnabled();
+    if (!allowed) return;
+
+    await _getCurrentLocation();
+
     if (_currentPosition == null) {
-      await _getCurrentLocation();
+      _showSnackBar('Unable to get location', Colors.red);
+      return;
     }
 
     setState(() => _isLoading = true);
@@ -359,34 +362,27 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
 
       _showSnackBar('✅ Checked out successfully', AppTheme.success);
 
-      // Stop background tracking
       await _stopBackgroundTracking();
 
-      // Refresh stats
-      _fetchTodayStats();
-      _fetchTodayTimeline();
+      await _fetchTodayStats();
+      await _fetchTodayTimeline();
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('❌ Check-out failed: $e', AppTheme.error);
     }
   }
 
-  // ============================================
-  // BACKGROUND TRACKING
-  // ============================================
-
   Future<void> _startBackgroundTracking() async {
+    final allowed = await _ensureLocationEnabled();
+    if (!allowed) return;
+
     try {
       await _bgLocationService.start(
         userId: widget.userId,
         userName: widget.userName,
       );
 
-      final allowed = await _ensureLocationEnabled();
-      if (!allowed) return;
-
       setState(() => _isTracking = true);
-
       print('🟢 Background tracking started');
     } catch (e) {
       print('❌ Failed to start tracking: $e');
@@ -644,52 +640,58 @@ class _EnhancedEmployeeHomeScreenState extends State<EnhancedEmployeeHomeScreen>
             ),
 
           // Menu
-          PopupMenuButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
+            onSelected: (value) async {
+              if (value == 'timeline') {
+                _showTimelineSheet();
+              }
+
+              if (value == 'refresh') {
+                await _loadStatus();
+                await _getCurrentLocation();
+                await _fetchTodayStats();
+              }
+
+              if (value == 'logout') {
+                await _bgLocationService.stop();
+
+                await Provider.of<AuthProvider>(context, listen: false)
+                    .logout();
+
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
+                }
+              }
+            },
             itemBuilder: (context) => [
-              PopupMenuItem(
+              const PopupMenuItem(
+                value: 'timeline',
                 child: ListTile(
-                  leading: const Icon(Icons.timeline),
-                  title: const Text('View Timeline'),
-                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.timeline),
+                  title: Text('View Timeline'),
                 ),
-                onTap: _showTimelineSheet,
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
+                value: 'refresh',
                 child: ListTile(
-                  leading: const Icon(Icons.refresh),
-                  title: const Text('Refresh'),
-                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.refresh),
+                  title: Text('Refresh'),
                 ),
-                onTap: () async {
-                  await _loadStatus();
-                  await _getCurrentLocation();
-                  await _fetchTodayStats();
-                },
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
+                value: 'logout',
                 child: ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Logout'),
-                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.logout),
+                  title: Text('Logout'),
                 ),
-                onTap: () async {
-                  await _bgLocationService.stop();
-
-                  await Provider.of<AuthProvider>(context, listen: false)
-                      .logout();
-
-                  if (mounted) {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  }
-                },
               ),
             ],
-          ),
+          )
         ],
       ),
       body: RefreshIndicator(
