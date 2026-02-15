@@ -3,7 +3,8 @@
 
 const express = require("express");
 const router = express.Router();
-const auth = require("../middleware/auth");
+const { protect } = require("../middleware/auth");
+
 const Attendance = require("../models/Attendance");
 
 // Helper: Calculate distance between two coordinates (Haversine formula)
@@ -24,7 +25,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 // GET /api/stats/my-stats?period=today|week|month
 // Get employee's statistics for specified period
-router.get("/my-stats", auth, async (req, res) => {
+router.get("/my-stats", protect, async (req, res) => {
   try {
     const { period = "today" } = req.query;
     const employeeId = req.user.id;
@@ -203,7 +204,7 @@ router.get("/my-stats", auth, async (req, res) => {
 
 // GET /api/stats/today-timeline
 // Get today's journey timeline
-router.get("/today-timeline", auth, async (req, res) => {
+router.get("/today-timeline", protect, async (req, res) => {
   try {
     const employeeId = req.user.id;
 
@@ -347,7 +348,7 @@ router.get("/today-timeline", auth, async (req, res) => {
 
 // GET /api/stats/employee-stats/:employeeId (Admin only)
 // Get specific employee's statistics
-router.get("/employee-stats/:employeeId", auth, async (req, res) => {
+router.get("/employee-stats/:employeeId", protect, async (req, res) => {
   try {
     // Check if admin (add your admin check logic)
     if (req.user.role !== "admin") {
